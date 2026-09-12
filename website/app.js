@@ -119,6 +119,150 @@ const GOALS = [
       expectedTargets: ["filter"],
     },
   },
+  {
+    id: "send-a-photo",
+    title: "Send a photo",
+    steps: [
+      { target: "photos", instruction: "Look at Photos to send one from your library" },
+    ],
+    quiz: [
+      {
+        question: "Which option sends a photo from your library?",
+        options: ["Photos", "Stickers", "Genmoji", "Image Playground"],
+        correct: "Photos",
+      },
+    ],
+    scenario: {
+      instruction: "Send a photo from your library.",
+      expectedTargets: ["photos"],
+    },
+  },
+  {
+    id: "send-a-sticker",
+    title: "Send a sticker",
+    steps: [
+      { target: "stickers", instruction: "Look at Stickers to send one in your message" },
+    ],
+    quiz: [
+      {
+        question: "Which option sends a sticker?",
+        options: ["Polls", "Stickers", "#images", "Message Effects"],
+        correct: "Stickers",
+      },
+    ],
+    scenario: {
+      instruction: "Send a sticker.",
+      expectedTargets: ["stickers"],
+    },
+  },
+  {
+    id: "create-a-poll",
+    title: "Create a poll",
+    steps: [
+      { target: "polls", instruction: "Look at Polls to create one for the group to vote on" },
+    ],
+    quiz: [
+      {
+        question: "Which option creates a poll for the group?",
+        options: ["Polls", "Send Later", "Genmoji", "Photos"],
+        correct: "Polls",
+      },
+    ],
+    scenario: {
+      instruction: "Create a poll.",
+      expectedTargets: ["polls"],
+    },
+  },
+  {
+    id: "schedule-a-message",
+    title: "Schedule a message",
+    steps: [
+      { target: "send later", instruction: "Look at Send Later to schedule your message" },
+    ],
+    quiz: [
+      {
+        question: "Which option schedules a message to send later?",
+        options: ["Send Later", "Polls", "Message Effects", "Filter"],
+        correct: "Send Later",
+      },
+    ],
+    scenario: {
+      instruction: "Schedule a message to send later.",
+      expectedTargets: ["send later"],
+    },
+  },
+  {
+    id: "create-a-genmoji",
+    title: "Create a Genmoji",
+    steps: [
+      { target: "genmoji", instruction: "Look at Genmoji to create a custom emoji" },
+    ],
+    quiz: [
+      {
+        question: "Which option creates a custom emoji from a description?",
+        options: ["Genmoji", "Emoji", "Stickers", "Image Playground"],
+        correct: "Genmoji",
+      },
+    ],
+    scenario: {
+      instruction: "Create a Genmoji.",
+      expectedTargets: ["genmoji"],
+    },
+  },
+  {
+    id: "generate-an-image",
+    title: "Generate an image",
+    steps: [
+      { target: "image playground", instruction: "Look at Image Playground to generate an image" },
+    ],
+    quiz: [
+      {
+        question: "Which option generates an image to send?",
+        options: ["Image Playground", "Genmoji", "#images", "Photos"],
+        correct: "Image Playground",
+      },
+    ],
+    scenario: {
+      instruction: "Generate an image to send.",
+      expectedTargets: ["image playground"],
+    },
+  },
+  {
+    id: "search-the-web-for-images",
+    title: "Search the web for images",
+    steps: [
+      { target: "#images", instruction: "Look at #images to search the web for one to send" },
+    ],
+    quiz: [
+      {
+        question: "Which option searches the web for images?",
+        options: ["#images", "Search", "Photos", "Image Playground"],
+        correct: "#images",
+      },
+    ],
+    scenario: {
+      instruction: "Search the web for an image.",
+      expectedTargets: ["#images"],
+    },
+  },
+  {
+    id: "add-a-message-effect",
+    title: "Add a message effect",
+    steps: [
+      { target: "message effects", instruction: "Look at Message Effects to add a fun effect" },
+    ],
+    quiz: [
+      {
+        question: "Which option adds a visual effect like balloons or confetti?",
+        options: ["Message Effects", "Genmoji", "Stickers", "Emoji"],
+        correct: "Message Effects",
+      },
+    ],
+    scenario: {
+      instruction: "Add a message effect.",
+      expectedTargets: ["message effects"],
+    },
+  },
 ];
 
 let socket = null;

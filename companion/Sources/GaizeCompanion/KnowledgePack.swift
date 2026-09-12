@@ -20,6 +20,13 @@ enum KnowledgePack {
             .spanish: "Esto inicia una nueva conversación para escribirle a alguien nuevo.",
             .french: "Ceci démarre une nouvelle conversation pour écrire à quelqu'un de nouveau.",
         ]),
+        // "send later" must come before "send" - .first(where:) stops at
+        // the first match, and "send later" contains "send" as a substring.
+        ("send later", [
+            .english: "This lets you schedule your message to send at a later time.",
+            .spanish: "Esto te permite programar tu mensaje para enviarlo más tarde.",
+            .french: "Ceci vous permet de programmer l'envoi de votre message plus tard.",
+        ]),
         ("send", [
             .english: "This sends the message you've typed.",
             .spanish: "Esto envía el mensaje que escribiste.",
@@ -74,6 +81,41 @@ enum KnowledgePack {
             .english: "This filters and sorts your conversation list.",
             .spanish: "Esto filtra y ordena tu lista de conversaciones.",
             .french: "Ceci filtre et trie votre liste de conversations.",
+        ]),
+        ("photos", [
+            .english: "This lets you send a photo from your photo library.",
+            .spanish: "Esto te permite enviar una foto de tu biblioteca de fotos.",
+            .french: "Ceci vous permet d'envoyer une photo de votre photothèque.",
+        ]),
+        ("stickers", [
+            .english: "This lets you send stickers in your message.",
+            .spanish: "Esto te permite enviar stickers en tu mensaje.",
+            .french: "Ceci vous permet d'envoyer des autocollants dans votre message.",
+        ]),
+        ("polls", [
+            .english: "This lets you create a poll for the group to vote on.",
+            .spanish: "Esto te permite crear una encuesta para que el grupo vote.",
+            .french: "Ceci vous permet de créer un sondage pour que le groupe vote.",
+        ]),
+        ("genmoji", [
+            .english: "This lets you create a custom emoji using a text description.",
+            .spanish: "Esto te permite crear un emoji personalizado con una descripción de texto.",
+            .french: "Ceci vous permet de créer un emoji personnalisé à partir d'une description texte.",
+        ]),
+        ("image playground", [
+            .english: "This lets you generate an image to send in your message.",
+            .spanish: "Esto te permite generar una imagen para enviar en tu mensaje.",
+            .french: "Ceci vous permet de générer une image à envoyer dans votre message.",
+        ]),
+        ("#images", [
+            .english: "This searches the web for images to send.",
+            .spanish: "Esto busca imágenes en la web para enviar.",
+            .french: "Ceci recherche des images sur le web à envoyer.",
+        ]),
+        ("message effects", [
+            .english: "This adds a fun visual effect to your message, like balloons or confetti.",
+            .spanish: "Esto agrega un efecto visual divertido a tu mensaje, como globos o confeti.",
+            .french: "Ceci ajoute un effet visuel amusant à votre message, comme des ballons ou des confettis.",
         ]),
     ]
 
