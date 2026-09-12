@@ -206,7 +206,14 @@ enum KnowledgePack {
     }
 
     static func confirmation(for element: SensedElement) -> String {
-        let label = element.title.isEmpty ? element.role : element.title
-        return AppSettings.shared.language.confirmationTemplate(label)
+        let language = AppSettings.shared.language
+        // A click can land on something with no accessible title, or on
+        // nothing we could resolve at all - "Pressing this." still tells the
+        // user a click happened, which is the point of announcing it.
+        var label = element.title.isEmpty ? element.role : element.title
+        if label.isEmpty || label == "unknown" {
+            label = language.unnamedElement
+        }
+        return language.confirmationTemplate(label)
     }
 }

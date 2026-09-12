@@ -314,14 +314,28 @@ enum AppLanguage: String, CaseIterable {
         }
     }
 
+    /// Spoken on every click, so the user always hears what just happened.
+    ///
+    /// Deliberately free of the select keywords ("select", "click",
+    /// "seleccionar", ...) - the mic hears this through the speakers, and
+    /// "select" is honored even while we're speaking (see VoiceCommands),
+    /// so "Clicking X" would re-trigger select in a loop. "Pressing X" says
+    /// the same thing without any word that can come back as a command.
     var confirmationTemplate: (String) -> String {
         switch self {
-        // Deliberately free of the select keywords ("select", "seleccionar",
-        // ...) - the mic hears this through the speakers, and "Selecting X"
-        // contained "select", which is what forced muting select mid-speech.
-        case .english: return { "Got it, \($0)." }
-        case .spanish: return { "Listo, \($0)." }
-        case .french: return { "D'accord, \($0)." }
+        case .english: return { "Pressing \($0)." }
+        case .spanish: return { "Pulsando \($0)." }
+        case .french: return { "Appui sur \($0)." }
+        }
+    }
+
+    /// Stands in for the element name when the click landed on something
+    /// with no accessible title ("Pressing this.").
+    var unnamedElement: String {
+        switch self {
+        case .english: return "this"
+        case .spanish: return "esto"
+        case .french: return "ceci"
         }
     }
 }
