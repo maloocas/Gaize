@@ -8,6 +8,7 @@ import threading
 import time
 
 import AppKit
+import AVFoundation
 from Foundation import NSData, NSObject, NSString
 import Vision
 import cv2
@@ -89,8 +90,13 @@ class CalibrationView(AppKit.NSView):
                         AppKit.NSForegroundColorAttributeName: signal_color}
         NSString.stringWithString_(signal).drawAtPoint_withAttributes_(
             (bounds.size.width-280,190),signal_attrs)
-        AppKit.NSColor.colorWithWhite_alpha_(.35,1).setStroke()
         box=((bounds.size.width-275,55),(210,120))
+        if self.controller.latest_frame:
+            frame_data=NSData.dataWithBytes_length_(self.controller.latest_frame,
+                                                     len(self.controller.latest_frame))
+            image=AppKit.NSImage.alloc().initWithData_(frame_data)
+            if image is not None: image.drawInRect_(box)
+        AppKit.NSColor.colorWithWhite_alpha_(.65,1).setStroke()
         AppKit.NSBezierPath.bezierPathWithRect_(box).stroke()
         if live:
             gx,gy=self.controller.latest_gaze
@@ -121,7 +127,7 @@ class NativeController(NSObject):
         self = objc.super(NativeController, self).init()
         if self is None: return None
         self.running=True; self.control_enabled=False; self.collecting=None; self.failed=False
-        self.latest_gaze=None; self.latest_seen=0.0
+        self.latest_gaze=None; self.latest_seen=0.0; self.latest_frame=None
         self.failure_reason="Calibration stopped — eyes were not detected. Press R to retry or Escape to exit."
         self.calib_samples=[]; self.calibration=None; self.target_index=0
         self.open_ears=collections.deque(maxlen=120); self.closed_frames=0
@@ -134,11 +140,31 @@ class NativeController(NSObject):
         AppKit.NSApp.activateIgnoringOtherApps_(True)
         self.key_monitor = AppKit.NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
             AppKit.NSEventMaskKeyDown, self.handle_key)
-        threading.Thread(target=self.camera_loop,daemon=True).start()
         threading.Thread(target=self.panic_loop,daemon=True).start()
+        self.request_camera_access()
         self.performSelector_withObject_afterDelay_("startTarget:",None,1.5)
         self.performSelector_withObject_afterDelay_("refreshGaze:",None,.1)
         return self
+
+    @objc.python_method
+    def request_camera_access(self):
+        status=AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(
+            AVFoundation.AVMediaTypeVideo)
+        if status == AVFoundation.AVAuthorizationStatusAuthorized:
+            self.startCamera_(None)
+        elif status == AVFoundation.AVAuthorizationStatusNotDetermined:
+            def decided(granted):
+                selector="startCamera:" if granted else "cameraFailed:"
+                self.performSelectorOnMainThread_withObject_waitUntilDone_(
+                    selector,None,False)
+            self.camera_auth_callback=decided
+            AVFoundation.AVCaptureDevice.requestAccessForMediaType_completionHandler_(
+                AVFoundation.AVMediaTypeVideo,decided)
+        else:
+            self.cameraFailed_(None)
+
+    def startCamera_(self, _sender):
+        threading.Thread(target=self.camera_loop,daemon=True).start()
 
     def startTarget_(self, _sender):
         if self.failed: return
@@ -228,6 +254,7 @@ class NativeController(NSObject):
             if not ok: continue
             good,encoded=cv2.imencode(".jpg",frame,[cv2.IMWRITE_JPEG_QUALITY,80])
             if not good: continue
+            self.latest_frame=encoded.tobytes()
             data=NSData.dataWithBytes_length_(encoded.tobytes(),encoded.size)
             handler=Vision.VNImageRequestHandler.alloc().initWithData_options_(data,{})
             succeeded,_=handler.performRequests_error_([request],None)
