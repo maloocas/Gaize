@@ -14,6 +14,10 @@
       import { decodeSentence } from './llm.js';
 
       const { words, freqs } = await loadWords('./words.txt');
+      const exitEl = document.createElement('div');
+      exitEl.className = 'swipe-exit';
+      exitEl.textContent = 'move here to finish';
+      document.body.prepend(exitEl);
       const textEl = document.createElement('div');
       textEl.className = 'swipe-text';
       document.body.prepend(textEl);
@@ -28,7 +32,14 @@
       // Trackpad/mouse stands in for gaze, a Space tap stands in for a blink: each tap ends
       // the current word and starts the next, decoded from the calibrated start offsets.
       // Backspace deletes a word.
-      addEventListener('mousemove', (e) => kb.feed(e.clientX, e.clientY));
+      // Moving into the exit strip at the top ends typing, same as Enter. Tap Space to start again.
+      addEventListener('mousemove', (e) => {
+        if (e.clientY < exitEl.getBoundingClientRect().bottom) {
+          if (kb.isRecording()) finishSentence();
+          return;
+        }
+        kb.feed(e.clientX, e.clientY);
+      });
       addEventListener('keydown', (e) => {
         if (e.code === 'Space') e.preventDefault();
         if (e.repeat) return;
