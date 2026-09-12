@@ -29,8 +29,7 @@ import time
 
 import Quartz
 import ApplicationServices as AS
-from AppKit import (NSPasteboard, NSPasteboardTypeString,
-                    NSRunningApplication, NSWorkspace)
+from AppKit import NSRunningApplication, NSWorkspace
 
 HOST, PORT = "127.0.0.1", 8766
 
@@ -225,23 +224,26 @@ def click(show_keyboard: bool = False):
 
 
 def insert_text(pid: int, text: str) -> bool:
-    """Paste into the target app and restore the user's clipboard afterward."""
+    """Insert composed text without borrowing the user's clipboard.
+
+    The old Command-V path restored the previous clipboard after a fixed delay.
+    Some apps process paste later than that, so they received the restored value
+    (often the commands used to launch OpenGaze) instead of the composed text.
+    Accessibility insertion is deterministic; Unicode key events are the broad
+    fallback for applications that do not expose AXSelectedText.
+    """
     if not activate(pid):
         return False
     time.sleep(.2)
-    pasteboard=NSPasteboard.generalPasteboard()
-    previous=pasteboard.stringForType_(NSPasteboardTypeString)
-    pasteboard.clearContents()
-    pasteboard.setString_forType_(text,NSPasteboardTypeString)
-    source=Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
-    for is_down in (True,False):
-        event=Quartz.CGEventCreateKeyboardEvent(source,9,is_down)  # V
-        Quartz.CGEventSetFlags(event,Quartz.kCGEventFlagMaskCommand)
-        Quartz.CGEventPost(Quartz.kCGHIDEventTap,event)
-    time.sleep(.35)
-    pasteboard.clearContents()
-    if previous is not None:
-        pasteboard.setString_forType_(previous,NSPasteboardTypeString)
+    ax_app=AS.AXUIElementCreateApplication(pid)
+    focused=_attr(ax_app,"AXFocusedUIElement")
+    if focused is not None:
+        try:
+            if AS.AXUIElementSetAttributeValue(focused,"AXSelectedText",text) == AS.kAXErrorSuccess:
+                return True
+        except Exception:
+            pass
+    type_text(text)
     return True
 
 
