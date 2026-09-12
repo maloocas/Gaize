@@ -13,7 +13,7 @@
       "destination": "/api/index"
     },
     {
-      "source": "/",
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ],
