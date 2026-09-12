@@ -54,6 +54,7 @@ final class VoiceCommands {
     private var task: SFSpeechRecognitionTask?
     private var isAuthorized = false
     private var restartPending = false
+    private var sessionRestartPending = false
 
     /// Words of the current recognition session as last seen. Partial
     /// results revise earlier words ("sell" -> "select"), they don't only
@@ -113,6 +114,11 @@ final class VoiceCommands {
         task?.cancel()
         request = nil
         task = nil
+        // A pending lightweight restart would otherwise fire after this,
+        // find audioEngine.isRunning false, and fall back into
+        // startListening() on its own - harmless, but not what a real
+        // stop() means.
+        sessionRestartPending = false
     }
 
     func restartForLanguageChange() {
@@ -126,7 +132,7 @@ final class VoiceCommands {
         // Coalesce - a send/dictation restart and the recognizer's own
         // final/error restart can land together, and two scheduled starts
         // would leave two recognition tasks running.
-        guard !restartPending else { return }
+        guard !restartPending, !sessionRestartPending else { return }
         restartPending = true
         stop()
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
@@ -135,14 +141,44 @@ final class VoiceCommands {
         }
     }
 
-    private func startListening() {
-        let language = AppSettings.shared.language
-        guard let recognizer = SFSpeechRecognizer(locale: language.locale), recognizer.isAvailable else {
-            print("VoiceCommands: recognizer unavailable for \(language.rawValue), retrying")
-            restartSoon(after: 1.0)
+    /// Starts a fresh recognition session (new request + task) without
+    /// touching the audio engine or its tap - the mic keeps capturing the
+    /// whole time this takes. Used for every routine session boundary:
+    /// after a select/dictation/send/question fires, after the recognizer
+    /// naturally finalizes a result, after its ~1-minute session cap.
+    ///
+    /// Those all used to go through restartSoon, which fully stops and
+    /// re-creates the audio engine and its tap - several hundred ms with
+    /// no audio captured at all. Since a restart fires right after a
+    /// pause, and the user's next utterance naturally follows a pause
+    /// too, that gap kept landing on exactly the moment someone started
+    /// talking again - losing the first syllable of "select" or "explain"
+    /// is enough to make the whole phrase fail to match, which is what
+    /// "sometimes it hears me, sometimes it doesn't" actually was.
+    private func restartSessionSoon() {
+        guard !sessionRestartPending, !restartPending else { return }
+        sessionRestartPending = true
+        task?.cancel()
+        request?.endAudio()
+        DispatchQueue.main.async { [weak self] in
+            self?.sessionRestartPending = false
+            self?.startNewSession()
+        }
+    }
+
+    /// Creates a fresh SFSpeechAudioBufferRecognitionRequest/task pair and
+    /// resets per-session state, assuming the audio engine and its tap are
+    /// already running (startListening sets those up once; the tap feeds
+    /// whatever request is currently in `self.request`, not a fixed one,
+    /// so swapping it here doesn't require touching the tap). Falls back
+    /// to the full startListening() path if the engine isn't actually up -
+    /// e.g. recovering after a real error - since there's nothing to feed
+    /// a new request otherwise.
+    private func startNewSession() {
+        guard let recognizer, audioEngine.isRunning else {
+            startListening()
             return
         }
-        self.recognizer = recognizer
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
@@ -162,26 +198,8 @@ final class VoiceCommands {
         pendingQuiz?.cancel()
         pendingQuiz = nil
 
-        let inputNode = audioEngine.inputNode
-        let format = inputNode.outputFormat(forBus: 0)
-        // installTap traps if a tap is already installed on this bus;
-        // removeTap is a safe no-op when there isn't one.
-        inputNode.removeTap(onBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
-            request.append(buffer)
-        }
-
-        audioEngine.prepare()
-        do {
-            try audioEngine.start()
-        } catch {
-            print("VoiceCommands: failed to start audio engine: \(error), retrying")
-            restartSoon(after: 1.0)
-            return
-        }
-
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            // Ignore callbacks from a session we already stopped (its
+            // Ignore callbacks from a session we already replaced (its
             // cancellation error would otherwise trigger another restart).
             guard let self, self.request === request else { return }
             if let result {
@@ -193,9 +211,42 @@ final class VoiceCommands {
             // old `guard let result else { return }` skipped the restart in
             // exactly that case, so listening silently died until relaunch.
             if error != nil || result?.isFinal == true {
-                self.restartSoon()
+                self.restartSessionSoon()
             }
         }
+    }
+
+    private func startListening() {
+        let language = AppSettings.shared.language
+        guard let recognizer = SFSpeechRecognizer(locale: language.locale), recognizer.isAvailable else {
+            print("VoiceCommands: recognizer unavailable for \(language.rawValue), retrying")
+            restartSoon(after: 1.0)
+            return
+        }
+        self.recognizer = recognizer
+
+        let inputNode = audioEngine.inputNode
+        let format = inputNode.outputFormat(forBus: 0)
+        // installTap traps if a tap is already installed on this bus;
+        // removeTap is a safe no-op when there isn't one. Feeds whatever
+        // request startNewSession has most recently installed, read fresh
+        // on every buffer rather than captured once - that's what lets a
+        // new session start without reinstalling this tap.
+        inputNode.removeTap(onBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+            self?.request?.append(buffer)
+        }
+
+        audioEngine.prepare()
+        do {
+            try audioEngine.start()
+        } catch {
+            print("VoiceCommands: failed to start audio engine: \(error), retrying")
+            restartSoon(after: 1.0)
+            return
+        }
+
+        startNewSession()
     }
 
     private func handle(_ result: SFSpeechRecognitionResult) {
@@ -373,7 +424,7 @@ final class VoiceCommands {
         print("VoiceCommands: AWAKE")
         noteActivity()
         onWake?(announce)
-        restartSoon()
+        restartSessionSoon()
     }
 
     func goToSleep(explicit: Bool) {
@@ -386,7 +437,7 @@ final class VoiceCommands {
         pendingQuestion?.cancel()
         print("VoiceCommands: ASLEEP (\(explicit ? "asked" : "idle"))")
         onSleep?(explicit)
-        restartSoon()
+        restartSessionSoon()
     }
 
     /// Any command, dictation, or question keeps Gaize awake.
@@ -445,7 +496,7 @@ final class VoiceCommands {
             // Start a fresh session - ignoring the rest of this one left
             // listening deaf: with room noise it never finalized, so it never
             // restarted (observed: "gaize open" unheard after a send).
-            self.restartSoon()
+            self.restartSessionSoon()
         }
         if isFinal {
             fire()
@@ -522,7 +573,7 @@ final class VoiceCommands {
             print("VoiceCommands: QUESTION \"\(question)\"")
             self.noteActivity()
             self.onQuestion?(question)
-            self.restartSoon()
+            self.restartSessionSoon()
         }
         if isFinal {
             fire()
@@ -639,7 +690,7 @@ final class VoiceCommands {
         onDictate?(dictatedText)
         // Fresh session per dictation, so segment indices and the earlier
         // words don't linger in a session noise may keep open indefinitely.
-        restartSoon()
+        restartSessionSoon()
     }
 
     /// True if every heard word appears in what Output is saying (or just
