@@ -110,6 +110,17 @@ enum AppLanguage: String, CaseIterable {
         }
     }
 
+    /// Standalone-phrase versions of "Gaize open" - recognition often drops
+    /// the unfamiliar "Gaize" and hears just "open" (observed). Matched only
+    /// as a whole pause-separated phrase, and never while dictating.
+    var openWebsitePhrases: [String] {
+        switch self {
+        case .english: return ["open", "open gaize", "open gaze", "gaize", "open up"]
+        case .spanish: return ["abre", "abrir", "abrir gaize"]
+        case .french: return ["ouvre", "ouvrir", "ouvrir gaize"]
+        }
+    }
+
     var sentConfirmation: String {
         switch self {
         case .english: return "Message sent."
