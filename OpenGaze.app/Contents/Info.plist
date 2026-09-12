@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleExecutable</key><string>OpenGaze</string>
+  <key>CFBundleIdentifier</key><string>com.opengaze.assist</string>
+  <key>CFBundleName</key><string>OpenGaze</string>
+  <key>CFBundleDisplayName</key><string>OpenGaze</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>NSCameraUsageDescription</key><string>OpenGaze uses the camera to move the pointer with your eyes and detect blink clicks.</string>
+  <key>LSUIElement</key><true/>
+</dict></plist>

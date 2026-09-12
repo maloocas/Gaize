@@ -1,4 +1,22 @@
+# ---- Gaize (Swift companion + website) ----
 .build/
 .DS_Store
 .swiftpm/
 companion/Gaize.app/
+
+# ---- OpenGaze Assist (Python native controller + web app) ----
+.venv/
+.native-venv/
+OpenGaze.app/Contents/MacOS/OpenGaze
+OpenGaze.app/Contents/_CodeSignature/
+__pycache__/
+*.pyc
+.env
+.env*
+data/sessions.jsonl
+.vercel
+
+# Upstream Gaize clone that was vendored inside the assist repo for reference.
+# It is its own git repo, so committing it would only store an unresolvable
+# gitlink. Kept here so a stray copy is never committed by accident.
+Gaize/
