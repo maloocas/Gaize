@@ -185,6 +185,26 @@ enum AppLanguage: String, CaseIterable {
         }
     }
 
+    /// Launches and focuses the Messages app.
+    var openMessagesKeywords: [String] {
+        switch self {
+        case .english: return [
+            "open messages", "open message", "open imessage", "open i message", "open the messages",
+            "open the messages app", "launch messages",
+        ]
+        case .spanish: return ["abrir mensajes", "abre mensajes", "abrir imessage", "abre imessage"]
+        case .french: return ["ouvrir messages", "ouvre messages", "ouvrir les messages", "ouvre les messages"]
+        }
+    }
+
+    var openingMessages: String {
+        switch self {
+        case .english: return "Opening Messages."
+        case .spanish: return "Abriendo Mensajes."
+        case .french: return "J'ouvre Messages."
+        }
+    }
+
     var sentConfirmation: String {
         switch self {
         case .english: return "Message sent."

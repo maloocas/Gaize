@@ -13,6 +13,8 @@ final class VoiceCommands {
     var onSelectCommand: (() -> Void)?
     var onExplainCommand: (() -> Void)?
     var onOpenWebsiteCommand: (() -> Void)?
+    /// "open messages" - launch and focus the Messages app.
+    var onOpenMessagesCommand: (() -> Void)?
     /// Saying just "send" (the whole utterance) sends the Messages draft.
     var onSendCommand: (() -> Void)?
     /// A spoken "how do I..." question, for the AI assistant.
@@ -312,7 +314,10 @@ final class VoiceCommands {
             action()
         }
 
-        if language.openWebsiteKeywords.contains(where: recentText.contains) {
+        // Before the website check - both start with "open".
+        if language.openMessagesKeywords.contains(where: recentText.contains) {
+            fire { onOpenMessagesCommand?() }
+        } else if language.openWebsiteKeywords.contains(where: recentText.contains) {
             fire { onOpenWebsiteCommand?() }
         } else if language.homeKeywords.contains(where: recentText.contains) {
             fire { onWebsiteAction?("home") }
