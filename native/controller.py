@@ -12,7 +12,7 @@ import time
 
 import AppKit
 import AVFoundation
-from Foundation import NSData, NSObject, NSString
+from Foundation import NSData, NSObject, NSString, NSTimer
 import Vision
 import cv2
 import objc
@@ -52,6 +52,30 @@ def vision_eye_metrics(observation):
     gaze = ((sum(p[0] for p in ratios)/len(ratios),
              sum(p[1] for p in ratios)/len(ratios)) if ratios else (.5,.5))
     return gaze, sum(ears)/len(ears)
+
+
+class CrosshairView(AppKit.NSView):
+    controller = objc.ivar()
+
+    def initWithController_(self, controller):
+        self=objc.super(CrosshairView,self).initWithFrame_(((0,0),(52,52)))
+        if self is not None: self.controller=controller
+        return self
+
+    def drawRect_(self, _rect):
+        center=26
+        color=(AppKit.NSColor.colorWithRed_green_blue_alpha_(1,.82,.12,.98)
+               if time.monotonic()<self.controller.click_flash_until
+               else AppKit.NSColor.colorWithRed_green_blue_alpha_(.1,.9,1,.95))
+        color.setStroke()
+        ring=AppKit.NSBezierPath.bezierPathWithOvalInRect_(((10,10),(32,32)))
+        ring.setLineWidth_(3); ring.stroke()
+        for start,end in (((center,1),(center,17)),((center,35),(center,51)),
+                          ((1,center),(17,center)),((35,center),(51,center))):
+            line=AppKit.NSBezierPath.bezierPath(); line.moveToPoint_(start); line.lineToPoint_(end)
+            line.setLineWidth_(3); line.stroke()
+        AppKit.NSColor.whiteColor().setFill()
+        AppKit.NSBezierPath.bezierPathWithOvalInRect_(((23,23),(6,6))).fill()
 
 
 class CalibrationView(AppKit.NSView):
@@ -138,6 +162,22 @@ class NativeController(NSObject):
         self.calib_samples=[]; self.calibration=None; self.target_index=0
         self.open_ears=collections.deque(maxlen=120); self.closed_frames=0
         self.closed_since=0.0; self.last_blink=0.0; self.smooth=[.5,.5]
+        self.click_flash_until=0.0
+        self.crosshair_view=CrosshairView.alloc().initWithController_(self)
+        self.crosshair_window=AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            ((0,0),(52,52)),AppKit.NSWindowStyleMaskBorderless,
+            AppKit.NSBackingStoreBuffered,False)
+        self.crosshair_window.setOpaque_(False)
+        self.crosshair_window.setBackgroundColor_(AppKit.NSColor.clearColor())
+        self.crosshair_window.setHasShadow_(False); self.crosshair_window.setIgnoresMouseEvents_(True)
+        self.crosshair_window.setLevel_(AppKit.NSScreenSaverWindowLevel)
+        self.crosshair_window.setCollectionBehavior_(
+            AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces |
+            AppKit.NSWindowCollectionBehaviorStationary)
+        self.crosshair_window.setContentView_(self.crosshair_view)
+        self.crosshair_window.orderFrontRegardless()
+        self.crosshair_timer=NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            1/60,self,"updateCrosshair:",None,True)
         # A menu-bar control keeps the app out of the way while providing a
         # visible, mouse-accessible exit in addition to the Escape panic key.
         self.status_item=AppKit.NSStatusBar.systemStatusBar().statusItemWithLength_(
@@ -227,6 +267,15 @@ class NativeController(NSObject):
         self.running=False; self.control_enabled=False
         AppKit.NSApp.terminate_(None)
 
+    def updateCrosshair_(self, _timer):
+        point=AppKit.NSEvent.mouseLocation()
+        self.crosshair_window.setFrameOrigin_((point.x-26,point.y-26))
+        self.crosshair_view.setNeedsDisplay_(True)
+
+    def flashCrosshair_(self, _sender):
+        self.click_flash_until=time.monotonic()+.22
+        self.crosshair_view.setNeedsDisplay_(True)
+
     @objc.python_method
     def process(self,gaze,ear,now):
         self.latest_gaze=gaze; self.latest_seen=now
@@ -238,7 +287,10 @@ class NativeController(NSObject):
             if self.closed_frames==2: self.closed_since=now
         else:
             if self.closed_frames>=2 and .07<=now-self.closed_since<=.9 and now-self.last_blink>.38:
-                self.last_blink=now; click()
+                self.last_blink=now
+                self.performSelectorOnMainThread_withObject_waitUntilDone_(
+                    "flashCrosshair:",None,False)
+                click()
             self.closed_frames=0
 
     def refreshGaze_(self, _sender):
