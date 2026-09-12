@@ -13,7 +13,7 @@ Open http://localhost:8000. The page is set up for trackpad testing and calibrat
 
 The panel in the top right records the gap between words: the time from releasing Space to pressing it again. That gap is roughly how long it takes to move to the next word's first letter. It shows the mean, median, p10 and p90, and **Copy JSON** copies the raw gaps. Backspace deletes a word and doesn't count a gap for the next word, so corrections don't skew the numbers.
 
-**Blink mode** is for eye tracking later. `kb.boundary()` ends the current word and starts the next one right away. Each word is then decoded from several start delays set by the `offsets` option (default 0, 0.2, 0.4, 0.6 and 0.8 s), keeping the top `perOffset` candidates from each. The results are merged into one list sorted by score. Use the gap measurements to pick better offsets. **Backspace** deletes the last word. Click a suggestion to replace the last word.
+**Blink mode** is for eye tracking later. `kb.boundary()` ends the current word and starts the next one right away. Each word is then decoded from several start delays set by the `offsets` option (default 150, 200, 275, 350 and 450 ms, which match p5/p25/p50/p75/p90 of 47 gaps measured on a trackpad), keeping the top `perOffset` candidates from each. The results are merged into one list sorted by score. Use the gap measurements to pick better offsets. **Backspace** deletes the last word. Click a suggestion to replace the last word.
 
 ## How it works
 

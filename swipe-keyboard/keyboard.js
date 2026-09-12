@@ -13,7 +13,8 @@ export function createSwipeKeyboard(root, {
   words,
   freqs,
   accuracy = 1.5,
-  offsets = [0, 200, 400, 600, 800], // ms after the boundary
+  // ms after the boundary: ≈ p5/p25/p50/p75/p90 of measured inter-word gaps (n=47, trackpad)
+  offsets = [150, 200, 275, 350, 450],
   perOffset = 3,
   temperature = 0.5,
   onWord,
