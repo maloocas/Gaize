@@ -4,7 +4,7 @@
     "api/index.py": {
       "memory": 1024,
       "maxDuration": 30,
-      "includeFiles": "{data,public}/*"
+      "includeFiles": "data/**"
     }
   },
   "rewrites": [
