@@ -220,6 +220,26 @@ def insert_text(pid: int, text: str) -> bool:
     return True
 
 
+RETURN_KEYCODE = 36
+
+
+def press_return(pid: int) -> bool:
+    """Press Return in the target application.
+
+    Sending a message is the whole point of a communication device, and in most
+    apps that is Return rather than a button somewhere on screen. Posted as a
+    real key event so the app treats it exactly like a typed Return.
+    """
+    if not activate(pid):
+        return False
+    time.sleep(.15)
+    source = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
+    for is_down in (True, False):
+        event = Quartz.CGEventCreateKeyboardEvent(source, RETURN_KEYCODE, is_down)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+    return True
+
+
 def type_text(text):
     # Unicode events avoid keyboard-layout assumptions. Small chunks prevent
     # applications from dropping characters on long AAC phrases.

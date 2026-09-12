@@ -63,7 +63,15 @@ an editable field opens the large on-screen keyboard. Its oversized keys are
 selected with pointer movement plus blink-clicks; physical typing is not
 required. In the keyboard, double blink to start a swipe, trace through a word,
 then double blink again to decode it; alternate words appear as large selectable
-suggestions. This ports the SHARK2-style decoder and frequency model from the
+suggestions. Word suggestions also appear as you type: the row above the keys
+completes the word in progress and, once a word is finished, predicts the next
+one. Suggestions are ranked in tiers - names from your profile first, then the
+vocabulary this device actually uses, then general English - and they follow the
+sentence, so "my back h" offers "hurts" rather than "have". **SEND ⏎** delivers
+what you have composed and then presses Return, which is how most apps send a
+message; **TYPE INTO APP ↗** delivers the text and leaves it in the field. With
+an empty message SEND is just Return, for accepting a dialog or submitting a
+field. This ports the SHARK2-style decoder and frequency model from the
 `swipe-keyboard` branch of `maloocas/Gaize`. A click-through cyan crosshair shows the exact aim point in every app
 and flashes yellow when a blink click fires. Double blink to press-and-hold for
 dragging (the crosshair turns purple); double blink again to release.
