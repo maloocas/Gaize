@@ -66,7 +66,24 @@ then double blink again to decode it; alternate words appear as large selectable
 suggestions. This ports the SHARK2-style decoder and frequency model from the
 `swipe-keyboard` branch of `maloocas/Gaize`. A click-through cyan crosshair shows the exact aim point in every app
 and flashes yellow when a blink click fires. Double blink to press-and-hold for
-dragging (the crosshair turns purple); double blink again to release. Press Escape once or choose
+dragging (the crosshair turns purple); double blink again to release.
+
+**Right click:** hold your eyes closed for about a second. The gestures are told
+apart by how long the eyes stay shut, not by counting blinks, because single and
+double blinks are already spoken for and chaining a reliable third blink is hard:
+
+| Eyes closed for | Gesture |
+|---|---|
+| 0.07 – 0.9s | left click (twice in quick succession = drag, or swipe in the keyboard) |
+| 0.95 – 2.6s | **right click** |
+| longer | ignored — treated as resting your eyes |
+
+A ring fills around the crosshair as the hold builds and turns green once the
+right click will actually fire, so the timing is visible rather than guessed.
+**Right Click at Pointer** in the menu-bar item does the same thing without the
+gesture, for when lighting makes blink detection unreliable.
+
+Press Escape once or choose
 **Quit OpenGaze** from the menu-bar item to stop at any time.
 
 On first launch, macOS may request Camera, Accessibility, and Input Monitoring
