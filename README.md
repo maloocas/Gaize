@@ -1,8 +1,16 @@
-# LLM-Accelerated AAC
+# OpenGaze Assist
 
 **Live demo: https://aac-accelerator.vercel.app**
 
-A working prototype of LLM-accelerated communication for single-switch AAC users,
+A full computer-access prototype for people with limited motor control and ASL users,
+built around webcam eye gaze, blink/dwell selection, a large on-screen keyboard,
+quick visual phrases, and the original LLM-accelerated communication system.
+
+The browser version includes a safe simulated desktop. On macOS, a local-only
+native bridge can move the real system pointer, click in any application, and
+type the composed text into the focused application.
+
+The communication component is designed for single-switch AAC users,
 built from `aac-accelerator-design-doc.md` for the Frontier Cascadia Hackathon.
 
 Someone using eye-gaze typing or single-switch scanning communicates at a few
@@ -42,6 +50,31 @@ cd ~/aac-accelerator && ./run.sh
 
 Then open http://localhost:8000. Press <kbd>Space</kbd> to start scanning;
 <kbd>Space</kbd> is the switch.
+
+For whole-computer control on macOS, start the bridge in a second terminal:
+
+```bash
+python3 native/bridge.py
+```
+
+Grant Terminal Accessibility permission when macOS asks. The bridge binds only
+to `127.0.0.1` and accepts the local app and production demo origins. Without it,
+all communication, keyboard, ASL-board, gaze, dwell, blink and speech features
+still work inside the browser.
+
+## Accessible computer controls
+
+- **Look to move:** MediaPipe iris landmarks estimate a coarse gaze point and
+  smooth webcam jitter. Large targets are deliberate; this is not positioned as
+  a clinical-grade eye tracker.
+- **Blink or dwell to choose:** calibrated blink detection and adjustable dwell
+  selection share the same target system. Mouse/touch remain available for setup.
+- **Keyboard:** large QWERTY keys, word suggestions, text-to-speech, clipboard
+  fallback, and native typing through the local bridge.
+- **ASL board:** visual high-frequency needs and phrases can be selected and
+  spoken for communication with non-signing partners.
+- **Communicate:** preserves the original first-letter sentence expansion and
+  single-switch row/column scan mode.
 
 Copy `.env.example` to `.env` and set `OPENROUTER_API_KEY` for the cloud model.
 With no key it still runs — it falls back to the offline generator.

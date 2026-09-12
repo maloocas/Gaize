@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LLM-Accelerated AAC</title>
+<title>OpenGaze Assist</title>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
 <header class="topbar">
   <div class="brand">
-    <h1>LLM-Accelerated AAC</h1>
-    <p class="sub">Single-switch scanning &middot; research prototype</p>
+    <h1>OpenGaze Assist</h1>
+    <p class="sub">Eyes to move &middot; blink to choose &middot; communicate your way</p>
   </div>
   <div class="status-cluster">
     <span id="providerBadge" class="badge" title="Candidate source">checking&hellip;</span>
@@ -19,7 +19,55 @@
   </div>
 </header>
 
-<main>
+<nav class="app-nav" aria-label="Primary">
+  <button class="nav-btn is-active" data-view="computer">Computer</button>
+  <button class="nav-btn" data-view="keyboard">Keyboard</button>
+  <button class="nav-btn" data-view="communicate">Communicate</button>
+  <button class="nav-btn" data-view="sign">ASL board</button>
+  <button class="nav-btn" data-view="settings">Setup</button>
+</nav>
+
+<div id="gazeCursor" class="gaze-cursor" aria-hidden="true"><span></span></div>
+
+<main id="computerView" class="assist-view computer-view">
+  <section class="welcome-card">
+    <div><span class="eyebrow">GOOD <span id="dayPart">AFTERNOON</span></span>
+      <h2>Your computer, controlled your way.</h2>
+      <p>Look at a large target. Hold your gaze or blink to open it.</p></div>
+    <div class="control-health"><span class="live-dot"></span><strong id="trackingLabel">Mouse preview</strong><small id="bridgeLabel">Browser mode</small></div>
+  </section>
+  <section class="launcher-grid" aria-label="Computer shortcuts">
+    <button class="launch-card gaze-target" data-action="keyboard"><span class="launch-icon blue">⌨</span><strong>Keyboard</strong><small>Type anywhere</small></button>
+    <button class="launch-card gaze-target" data-action="communicate"><span class="launch-icon violet">◉</span><strong>Communicate</strong><small>Build and speak</small></button>
+    <button class="launch-card gaze-target" data-action="browser"><span class="launch-icon cyan">◎</span><strong>Web</strong><small>Open a website</small></button>
+    <button class="launch-card gaze-target" data-action="messages"><span class="launch-icon green">●</span><strong>Messages</strong><small>Write a message</small></button>
+    <button class="launch-card gaze-target" data-action="sign"><span class="launch-icon orange">🤟</span><strong>ASL board</strong><small>Quick visual phrases</small></button>
+    <button class="launch-card gaze-target" data-action="settings"><span class="launch-icon gray">⚙</span><strong>Setup</strong><small>Calibrate controls</small></button>
+  </section>
+  <section class="quick-strip"><strong>Quick speak</strong><div id="quickSpeak"></div></section>
+</main>
+
+<main id="keyboardView" class="assist-view hidden single-view">
+  <section class="compose-card">
+    <div class="panel-head"><div><span class="eyebrow">ON-SCREEN KEYBOARD</span><h2>Say or type anything</h2></div><button id="keyboardSpeak" class="btn btn-speak">Speak</button></div>
+    <textarea id="computerText" aria-label="Text to type" placeholder="Your words appear here…"></textarea>
+    <div id="wordSuggestions" class="suggestions"></div>
+    <div id="onscreenKeyboard" class="onscreen-keyboard"></div>
+    <div class="keyboard-actions"><button class="key special gaze-target" data-key="backspace">⌫ Delete</button><button class="key special gaze-target" data-key="space">Space</button><button class="key special gaze-target" data-key="clear">Clear</button><button id="sendToComputer" class="key enter gaze-target">Type into computer ↗</button></div>
+  </section>
+</main>
+
+<main id="signView" class="assist-view hidden single-view">
+  <section class="compose-card"><span class="eyebrow">ASL COMMUNICATION BOARD</span><h2>One look, one clear message.</h2><p class="hint">Large visual phrases support fast communication for ASL users and partners who do not sign.</p><div id="signGrid" class="sign-grid"></div></section>
+</main>
+
+<main id="settingsView" class="assist-view hidden single-view">
+  <section class="compose-card"><span class="eyebrow">CONTROL SETUP</span><h2>Make the controls fit the person.</h2>
+    <div class="setup-grid"><div class="setup-item"><strong>1. Camera tracking</strong><p>Enable the camera below, then calibrate with eyes open.</p><button class="btn btn-primary" data-jump-camera>Open camera controls</button></div><div class="setup-item"><strong>2. Selection method</strong><label><input id="dwellToggle" type="checkbox" checked> Dwell to click after <output id="dwellOut">900ms</output></label><input id="dwellSpeed" type="range" min="500" max="1800" step="100" value="900"></div><div class="setup-item"><strong>3. Whole-computer control</strong><p>Run the local bridge to move the real macOS pointer and type into other apps.</p><button id="bridgeConnect" class="btn btn-primary">Connect local bridge</button><code>python3 native/bridge.py</code></div></div>
+  </section>
+</main>
+
+<main id="aacView" class="assist-view hidden">
   <!-- ============ LEFT: the conversation and the utterance being built ======= -->
   <section class="col col-main">
 
@@ -157,5 +205,6 @@
 </main>
 
 <script type="module" src="app.js"></script>
+<script type="module" src="computer.js"></script>
 </body>
 </html>

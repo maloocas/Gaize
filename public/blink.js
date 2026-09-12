@@ -1,4 +1,4 @@
-/* Blink-as-switch (design doc s5).
+/* Webcam access layer: blink selection plus coarse iris-based gaze pointing.
  *
  * Deliberately NOT gaze-point tracking. We only need one bit - "did they blink
  * just now" - which a plain RGB webcam gives reliably without calibration rigs
@@ -18,7 +18,7 @@ import {
   LEFT_EYE, RIGHT_EYE, meanEar, createBlinkGate, thresholdFromSamples,
 } from "./blink-core.js";
 
-export function initBlink({ video, overlay, placeholder, onBlink, onEar, onStatus }) {
+export function initBlink({ video, overlay, placeholder, onBlink, onEar, onStatus, onGaze = null }) {
   let landmarker = null;
   let stream = null;
   let running = false;
@@ -30,6 +30,7 @@ export function initBlink({ video, overlay, placeholder, onBlink, onEar, onStatu
   let calibSamples = [];
   const gate = createBlinkGate();
   let lastClosed = false;
+  let gazeX = 0.5, gazeY = 0.5;
 
   const ctx = overlay.getContext("2d");
 
@@ -113,8 +114,28 @@ export function initBlink({ video, overlay, placeholder, onBlink, onEar, onStatu
     lastClosed = result.closed;
     if (result.blink) {
       onBlink();
+      window.openGazeBlink?.();
       onStatus(`blink ✓ (${Math.round(result.heldMs)}ms closed)`, "live");
     }
+  }
+
+  function gazeFromLandmarks(pts) {
+    // MediaPipe's 10 iris points, normalized inside the outer eye corners/lids.
+    // This is intentionally coarse; calibration and large targets matter more
+    // than pretending a laptop webcam is a clinical eye tracker.
+    if (!pts[477]) return null;
+    const center = (ids) => ids.reduce((a,i)=>({x:a.x+pts[i].x/ids.length,y:a.y+pts[i].y/ids.length}),{x:0,y:0});
+    const li=center([468,469,470,471,472]), ri=center([473,474,475,476,477]);
+    const ratio=(iris,a,b,top,bottom)=>({x:(iris.x-pts[a].x)/(pts[b].x-pts[a].x),y:(iris.y-pts[top].y)/(pts[bottom].y-pts[top].y)});
+    const l=ratio(li,33,133,159,145), r=ratio(ri,362,263,386,374);
+    if (![l.x,l.y,r.x,r.y].every(Number.isFinite)) return null;
+    // Mirror x because the preview is mirrored. Expand the useful central eye
+    // range to the screen, then low-pass filter tremor and camera noise.
+    const rawX=1-(((l.x+r.x)/2)-0.22)/0.56;
+    const rawY=(((l.y+r.y)/2)-0.18)/0.64;
+    gazeX=gazeX*.78+Math.max(0,Math.min(1,rawX))*.22;
+    gazeY=gazeY*.78+Math.max(0,Math.min(1,rawY))*.22;
+    return {x:gazeX,y:gazeY};
   }
 
   function loop() {
@@ -138,6 +159,8 @@ export function initBlink({ video, overlay, placeholder, onBlink, onEar, onStatu
     }
     const ear = meanEar(pts);
     if (ear === null) return;
+    const gaze = gazeFromLandmarks(pts);
+    if (gaze) { onGaze?.(gaze.x, gaze.y); window.openGazeMove?.(gaze.x, gaze.y); }
     onEar(ear, threshold);
     handleEar(ear);
     draw(pts);
