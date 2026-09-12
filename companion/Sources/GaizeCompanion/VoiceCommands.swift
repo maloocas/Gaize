@@ -75,7 +75,7 @@ final class VoiceCommands {
     private var dictationStartIndex = 0
     private var pendingDictation: DispatchWorkItem?
     private let recipientSilence: TimeInterval = 1.0
-    private let messageSilence: TimeInterval = 1.8
+    private let messageSilence: TimeInterval = 0.8
     private var pendingQuestion: DispatchWorkItem?
     private var pendingQuiz: DispatchWorkItem?
     private let questionSilence: TimeInterval = 1.3
@@ -540,7 +540,8 @@ final class VoiceCommands {
     /// What to type for the words heard since the last dictation, or nil.
     /// For an empty To: field: the last pause-separated phrase, minus our
     /// own echoed words and repeats ("got it compose lucas lucas" -> "lucas"),
-    /// if it's name-sized. For the message body: everything since.
+    /// if it's name-sized. For the message body, use the latest
+    /// pause-separated phrase so earlier assistant speech is never copied.
     private func dictationCandidate(_ segments: [String]) -> String? {
         guard dictationStartIndex < segments.count else { return nil }
         let recipient = isRecipientPending?() == true
@@ -559,24 +560,16 @@ final class VoiceCommands {
             .trimmingCharacters(in: .punctuationCharacters.union(.whitespaces))
         if language.sendKeywords.contains(phrase) { return nil }
 
+        // Use the latest pause-separated phrase for both recipient and
+        // message dictation. Keeping the entire pending transcript caused
+        // an earlier spoken explanation to be appended to the user's text.
+        let words = pendingWordsWithoutEcho(from: segments[start...])
         guard recipient else {
-            // Explanations and confirmations can still arrive as recognition
-            // results after playback ends. Remove those recently spoken
-            // words before typing, while keeping the user's actual phrase.
-            let filtered = removingEchoWords(from: pending)
+            let filtered = words.joined(separator: " ")
             return filtered.isEmpty ? nil : filtered
         }
-
-        let words = pendingWordsWithoutEcho(from: segments[start...])
         guard (1...3).contains(words.count) else { return nil }
         return words.joined(separator: " ")
-    }
-
-    private func removingEchoWords(from text: String) -> String {
-        let words = text.split(separator: " ").map(String.init)
-        return words.filter { word in
-            !isEchoWord(word)
-        }.joined(separator: " ")
     }
 
     private func pendingWordsWithoutEcho<S: Sequence>(from pending: S) -> [String] where S.Element == String {
