@@ -6,26 +6,58 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <h1>Gaize</h1>
+  <div class="page">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">◎</span>
+        <span class="brand-name">Gaize</span>
+      </div>
+      <div class="connection" id="connection">
+        <span class="dot" id="connection-dot"></span>
+        <span id="status">Connecting…</span>
+      </div>
+    </header>
 
-  <section id="connection">
-    <p>Companion app: <span id="status">disconnected</span></p>
-  </section>
+    <main class="content">
+      <section id="intro" class="hero">
+        <h1>Learn any app, hands-free.</h1>
+        <p class="hero-sub">
+          Look at a button to hear what it does. Say &ldquo;select&rdquo; when
+          you're ready to use it. Pick a goal below and Gaize will guide you
+          through it, step by step.
+        </p>
+      </section>
 
-  <section id="goals">
-    <h2>Pick a goal</h2>
-    <ul id="goal-list"></ul>
-  </section>
+      <section id="goals" class="goals-section">
+        <h2 class="section-title">Goals</h2>
+        <ul id="goal-list" class="goal-list"></ul>
+      </section>
 
-  <section id="active-goal" hidden>
-    <h2 id="active-goal-title"></h2>
-    <p id="active-step"></p>
-  </section>
+      <section id="active-goal" class="panel" hidden>
+        <div class="panel-header">
+          <h2 id="active-goal-title"></h2>
+          <button class="btn-ghost" id="cancel-goal">Back to goals</button>
+        </div>
+        <div class="steps-track" id="steps-track"></div>
+        <p class="instruction" id="active-step"></p>
+        <div id="followup-choice" class="followup" hidden>
+          <button class="btn-primary" id="btn-quiz">Take a quiz</button>
+          <button class="btn-secondary" id="btn-scenario">Try a scenario</button>
+        </div>
+      </section>
 
-  <section id="quiz" hidden>
-    <h2>Quiz</h2>
-    <div id="quiz-body"></div>
-  </section>
+      <section id="quiz" class="panel" hidden>
+        <div class="panel-header">
+          <h2 id="quiz-heading">Quiz</h2>
+        </div>
+        <div id="quiz-body"></div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>Gaize &mdash; eye-tracking control that teaches you the interface, not just operates it.</p>
+    </footer>
+  </div>
 
   <script src="app.js"></script>
 </body>
