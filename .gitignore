@@ -20,3 +20,25 @@ data/sessions.jsonl
 # It is its own git repo, so committing it would only store an unresolvable
 # gitlink. Kept here so a stray copy is never committed by accident.
 Gaize/
+
+# ---- Node / InsForge backend ----
+node_modules/
+dist/
+build/
+.next/
+
+# InsForge CLI credentials and local project state.
+.insforge/
+
+# ---- AI agent tool directories ----
+.agent
+.agents
+.augment
+.cline
+.github/copilot*
+.kilocode
+.qoder
+.qwen
+.roo
+.trae
+.windsurf
