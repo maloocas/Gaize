@@ -1,5 +1,7 @@
 # LLM-Accelerated AAC
 
+**Live demo: https://aac-accelerator.vercel.app**
+
 A working prototype of LLM-accelerated communication for single-switch AAC users,
 built from `aac-accelerator-design-doc.md` for the Frontier Cascadia Hackathon.
 
@@ -163,6 +165,12 @@ node tests/test_blink_core.mjs                        # 18 tests
 
 ## Deployment
 
+Live at **https://aac-accelerator.vercel.app**.
+
+```bash
+npx vercel deploy --prod
+```
+
 Deployed on Vercel. `public/` is served from the CDN and `api/index.py` runs the
 FastAPI app as a serverless function — the vendored MediaPipe wasm never touches
 the lambda.
@@ -182,6 +190,14 @@ Two differences from running locally:
 Deploying also gets you HTTPS, which browsers require for camera access: the
 blink switch works on the deployed URL but not over plain `http://` on a LAN
 address.
+
+Two routing details worth knowing if you fork this:
+
+- Vercel sends `/` to the Python function rather than to `public/index.html`,
+  so the app redirects the root to the CDN copy. `outputDirectory` did not
+  change this; the redirect is what works.
+- `/api/health` reports `static_bundled`, `corpus_available` and
+  `profile_persistent`, which is how the above was diagnosed rather than guessed.
 
 > The deployed `/api/candidates` endpoint is unauthenticated and spends the
 > configured OpenRouter key. Set a spend limit on the key if the URL is shared.
