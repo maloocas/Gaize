@@ -217,6 +217,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Accept the top contact-autocomplete suggestion - Return only
             // does this here, never on the message body field, where it
             // would send prematurely.
+            // Messages looks contacts up asynchronously - a Return sent the
+            // instant the name is typed arrives before any suggestion exists
+            // and does nothing (verified: the "Lucas Ma" suggestion was left
+            // sitting open, unaccepted). Give the lookup time to populate.
+            Thread.sleep(forTimeInterval: 0.8)
             Dictation.confirmAutocomplete()
 
             // Auto-advance: move straight to the message body and arm it
