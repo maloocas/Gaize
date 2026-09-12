@@ -75,10 +75,22 @@ final class Sensing {
 
         var pid: pid_t = 0
         AXUIElementGetPid(axElement, &pid)
-        let ownerBundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? ""
+        let ownerApp = NSRunningApplication(processIdentifier: pid)
+        let ownerBundleID = ownerApp?.bundleIdentifier ?? ""
         print("Sensing: confirming \"\(sensed.title)\" owned by pid=\(pid) bundleID=\"\(ownerBundleID)\"")
 
         if Self.browserBundleIDs.contains(ownerBundleID) {
+            // A synthesized click posts to whatever window is actually
+            // topmost at that screen point - if the browser isn't the
+            // active app (e.g. the user's still focused on this terminal),
+            // the click silently lands on the wrong window instead of the
+            // intended button. Same root cause as Messages needing to be
+            // activated before an AX query - activate the owner first.
+            if let ownerApp, !ownerApp.isActive {
+                print("Sensing: activating \(ownerBundleID) before click (was backgrounded)")
+                ownerApp.activate(options: [])
+                Thread.sleep(forTimeInterval: 0.3)
+            }
             print("Sensing: confirming \"\(sensed.title)\" via synthesized click (browser-owned)")
             synthesizeClick(at: sensed.frame)
         } else {
