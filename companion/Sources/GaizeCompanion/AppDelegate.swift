@@ -17,6 +17,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let output = Output()
     private let voiceCommands = VoiceCommands()
 
+    /// Whether to pop up an on-screen keyboard after "compose" is
+    /// confirmed - toggleable from the menu, since a teammate is building
+    /// the real one to swap in for Dictation.showOnScreenKeyboard().
+    private var showKeyboardOnCompose = true
+    private var keyboardMenuItem: NSMenuItem?
+
+    /// The field ("to_field" or "message_field") currently armed to
+    /// receive the next spoken phrase as dictated text, and the AXUIElement
+    /// to type it into. Set right after confirming that field, cleared
+    /// after one dictation.
+    private var dictationKey: String?
+    private var dictationElement: AXUIElement?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         requestAccessibilityPermission()
 
@@ -24,6 +37,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem?.button?.title = "👁"
 
         let menu = NSMenu()
+        let keyboardItem = NSMenuItem(title: "Show On-Screen Keyboard on Compose", action: #selector(toggleKeyboardOnCompose), keyEquivalent: "")
+        keyboardItem.target = self
+        keyboardItem.state = showKeyboardOnCompose ? .on : .off
+        menu.addItem(keyboardItem)
+        keyboardMenuItem = keyboardItem
+        menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         statusItem?.menu = menu
 
@@ -49,10 +68,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.output.speakExplanation(for: element)
         }
 
-        sensing.onConfirmed = { [weak self] element in
+        sensing.onConfirmed = { [weak self] element, axElement in
             guard let self else { return }
             self.bridge.send(event: "action_completed", element: element)
             self.output.speakConfirmation(for: element)
+
+            let key = KnowledgePack.matchedEntry(for: element)?.key
+            print("AppDelegate: confirmed key=\(key ?? "nil") showKeyboardOnCompose=\(self.showKeyboardOnCompose)")
+
+            if key == "compose", self.showKeyboardOnCompose {
+                print("AppDelegate: launching on-screen keyboard")
+                Dictation.showOnScreenKeyboard()
+            }
+
+            if key == "to_field" || key == "message_field" {
+                print("AppDelegate: arming dictation for \(key ?? "?")")
+                self.dictationKey = key
+                self.dictationElement = axElement
+            }
         }
 
         voiceCommands.onSelectCommand = { [weak self] in
@@ -90,6 +123,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.bridge.sendAction(action)
         }
 
+        voiceCommands.isDictationModeActive = { [weak self] in
+            self?.dictationElement != nil
+        }
+
+        voiceCommands.onDictate = { [weak self] text in
+            self?.performDictation(text)
+        }
+
+        bridge.onDebugDictate = { [weak self] text in
+            self?.performDictation(text)
+        }
+
         bridge.onDebugExplain = { [weak self] in
             self?.sensing.explainCurrentElement()
         }
@@ -122,6 +167,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quit() {
         NSApplication.shared.terminate(nil)
+    }
+
+    @objc private func toggleKeyboardOnCompose() {
+        showKeyboardOnCompose.toggle()
+        keyboardMenuItem?.state = showKeyboardOnCompose ? .on : .off
+    }
+
+    private func performDictation(_ text: String) {
+        guard let axElement = dictationElement else { return }
+        print("AppDelegate: dictating \"\(text)\" into \(dictationKey ?? "?")")
+
+        // Same root cause as the synthesized-click bug: a posted keystroke
+        // event goes to whatever app is actually frontmost, not necessarily
+        // the one that owns the target element. Activate it first.
+        var pid: pid_t = 0
+        AXUIElementGetPid(axElement, &pid)
+        if let ownerApp = NSRunningApplication(processIdentifier: pid), !ownerApp.isActive {
+            print("AppDelegate: activating dictation target app before typing (was backgrounded)")
+            ownerApp.activate(options: [])
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+
+        Dictation.type(text, into: axElement)
+        if dictationKey == "to_field" {
+            // Accept the top contact-autocomplete suggestion - Return only
+            // does this here, never on the message body field, where it
+            // would send prematurely.
+            Dictation.confirmAutocomplete()
+        }
+        dictationKey = nil
+        dictationElement = nil
     }
 
     /// Resolved at compile time from this source file's location, so "open
