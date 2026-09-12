@@ -8,8 +8,15 @@ BRIDGE=(ROOT/"native"/"bridge.py").read_text()
 
 def test_keyboard_prefers_accessibility_caret_insertion():
     assert "insert_text(int(target[\"pid\"]),text)" in SOURCE
-    assert "kCGEventFlagMaskCommand" in BRIDGE
-    assert "NSPasteboardTypeString" in BRIDGE
+    assert "AXSelectedText" in BRIDGE
+    assert "AXUIElementSetAttributeValue" in BRIDGE
+    assert "type_text(text)" in BRIDGE
+
+
+def test_typing_never_races_the_users_clipboard():
+    body=BRIDGE.split("def insert_text",1)[1].split("RETURN_KEYCODE",1)[0]
+    assert "NSPasteboard" not in body
+    assert "kCGEventFlagMaskCommand" not in body
 
 
 def test_keyboard_is_pointer_operable_without_physical_typing():
