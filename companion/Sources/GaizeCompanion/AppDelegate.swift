@@ -123,9 +123,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             print("AppDelegate: opening website at \(AppDelegate.websiteURL)")
             self.output.speak("Opening Gaize.")
             // Already open (e.g. coming back after a goal in Messages): switch
-            // to it - opening the file URL again would add another tab.
-            if self.bridge.isConnected {
-                self.bringBrowserToFront()
+            // to it rather than opening the file URL again, which would add
+            // a second tab. Checking the browser process, not bridge.isConnected:
+            // a goal can run long enough in Messages that the browser tab's
+            // WebSocket gets dropped by background-tab throttling well before
+            // the tab itself closes - the website reconnects on its own
+            // (website/app.js's connect() retries every second) without
+            // losing its in-memory state (which goal, quiz progress, ...),
+            // but only if this doesn't reload it out from under that state.
+            // Requiring isConnected here made "gaize website" open a second,
+            // freshly-loaded tab back at the goal list instead, right when
+            // the user wanted to reach the quiz that only the still-open
+            // (if disconnected) tab actually had queued up.
+            if self.bringBrowserToFront() {
                 return
             }
             // Explicitly activate the browser once it opens the page - a
@@ -424,17 +434,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // message box.
             bridge.sendCompleted(title: "to:")
 
-            // Auto-advance: move straight to the message body and arm it
-            // for the next thing said, instead of making the user look at
-            // and separately "select" it - once a recipient is picked, the
-            // next natural thing is to say the message.
-            Thread.sleep(forTimeInterval: 0.2)
-            if let messageField = sensing.focusElement(forElementDescribed: "message") {
-                print("AppDelegate: auto-advanced to message field, arming dictation")
-                dictationKey = "message_field"
-                dictationElement = messageField
-                return
-            }
+            // No auto-advance: arming and clicking the message field here
+            // used to happen without the user ever asking for it - Gaize
+            // must not click anything the user didn't gaze-select or say
+            // "select" on. The user now says the message once they've
+            // looked at and selected the message box themselves, same as
+            // any other target.
         }
 
         if dictationKey == "message_field" {
@@ -518,12 +523,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Activates the browser that opens the website (the default browser
-    /// for file URLs) without opening another tab.
-    private func bringBrowserToFront() {
+    /// for file URLs), if it's already running, so the caller doesn't open
+    /// another tab. Returns whether a running browser was found and
+    /// activated - false means the caller should open the page fresh.
+    @discardableResult
+    private func bringBrowserToFront() -> Bool {
         guard let browserURL = NSWorkspace.shared.urlForApplication(toOpen: AppDelegate.websiteURL),
               let bundleID = Bundle(url: browserURL)?.bundleIdentifier,
-              let browser = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first else { return }
+              let browser = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first else { return false }
         browser.activate(options: [])
+        return true
     }
 
     /// "send": focuses Messages' message body and presses Return, which is
@@ -541,7 +550,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             messages.activate(options: [])
             Thread.sleep(forTimeInterval: 0.3)
         }
-        guard let body = sensing.focusElement(forElementDescribed: "message") else {
+        guard let body = sensing.messageBodyField() else {
             print("AppDelegate: send - no message field found")
             output.speak(language.nothingToSend)
             return

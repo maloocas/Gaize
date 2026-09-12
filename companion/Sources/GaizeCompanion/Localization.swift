@@ -178,11 +178,15 @@ enum AppLanguage: String, CaseIterable {
         }
     }
 
+    // Deliberately free of the select/explain keywords ("select", "explain",
+    // "what is this", ...) - the mic hears this through the speakers, and a
+    // command word in our own introduction risks the same false-refire the
+    // confirmation and click phrases avoid for the same reason.
     var wakeAcknowledgement: String {
         switch self {
-        case .english: return "I'm listening."
-        case .spanish: return "Te escucho."
-        case .french: return "Je vous écoute."
+        case .english: return "Hi, I'm Gaize. I'm listening."
+        case .spanish: return "Hola, soy Gaize. Te escucho."
+        case .french: return "Bonjour, je suis Gaize. Je vous écoute."
         }
     }
 

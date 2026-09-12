@@ -231,9 +231,8 @@ final class Sensing {
         return nil
     }
 
-    /// Activates the target app if needed and returns its windows - shared
-    /// by screenFrame and focusElement, both of which need to walk the same
-    /// AX tree.
+    /// Activates the target app if needed and returns its windows, used by
+    /// screenFrame to walk the AX tree.
     private func reopen(_ app: NSRunningApplication) {
         guard let url = app.bundleURL else { return }
         let config = NSWorkspace.OpenConfiguration()
@@ -305,7 +304,7 @@ final class Sensing {
         let windowsResult = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef)
 
         if windowsResult == .success, let list = windowsRef as? [AXUIElement] {
-            if !list.isEmpty || attempt > 0 { return list }
+            if !list.isEmpty || attempt > 0 { return orderedByFocus(list, appElement: appElement) }
             // Messages keeps running with zero windows after its last one is
             // closed - activating it then shows nothing, which is why "Learn
             // this goal" sometimes didn't visibly take you to Messages. A
@@ -325,6 +324,26 @@ final class Sensing {
 
         print("Sensing: kAXFocusedWindowAttribute also failed (axError=\(focusedResult.rawValue))")
         return nil
+    }
+
+    /// Puts the currently-key window first. Messages keeps the main
+    /// conversation-list window and the compose window as two separate
+    /// entries in kAXWindowsAttribute's list, in no particular order - a
+    /// substring search (findElement's fallback for anything not an exact
+    /// title match) used to hit a conversation cell in the list window
+    /// before ever reaching the compose window's real message field,
+    /// because a cell's own accessibility label can contain the word
+    /// "message" too. Searching the window the user is actually in first
+    /// fixes that without needing the search itself to be any smarter.
+    private func orderedByFocus(_ windows: [AXUIElement], appElement: AXUIElement) -> [AXUIElement] {
+        var focusedRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &focusedRef) == .success,
+              let focused = focusedRef else { return windows }
+        let focusedWindow = focused as! AXUIElement
+        guard let index = windows.firstIndex(where: { CFEqual($0, focusedWindow) }), index != 0 else { return windows }
+        var reordered = windows
+        reordered.insert(reordered.remove(at: index), at: 0)
+        return reordered
     }
 
     private func resetCurrent() {
@@ -415,29 +434,6 @@ final class Sensing {
         return nil
     }
 
-    /// Finds an element in the target app (Messages) by title match and
-    /// gives it AX focus - used to auto-advance from the To: field to the
-    /// message body after a recipient is confirmed, without requiring the
-    /// user to separately look at/select it.
-    @discardableResult
-    func focusElement(forElementDescribed description: String) -> AXUIElement? {
-        guard let windows = targetAppWindows() else { return nil }
-        for window in windows {
-            if let found = findElement(in: window, matching: description, depth: 0) {
-                AXUIElementSetAttributeValue(found.element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
-                // Setting AX focus alone doesn't move the caret in Messages
-                // (verified: it stayed in To: after the recipient was
-                // accepted) - clicking the field does.
-                let frame = found.sensed.frame
-                if frame.width > 0, frame.height > 0 {
-                    synthesizeClick(at: CGPoint(x: frame.midX, y: frame.midY))
-                }
-                return found.element
-            }
-        }
-        return nil
-    }
-
     /// Clicks the center of `element` - the only reliable way to put the
     /// caret into a Messages (Catalyst) text field. Setting AX focus doesn't
     /// move it, so dictated text kept landing wherever the caret already was
@@ -493,6 +489,33 @@ final class Sensing {
         }
         print("Sensing: no empty To: field in \(windows.count) window(s)")
         return nil
+    }
+
+    /// Messages' message-body field, found by asking for the currently
+    /// keyboard-focused element rather than searching for one titled
+    /// "message" - Messages moves focus there itself once a recipient is
+    /// accepted, and trusting focus sidesteps the substring-search bug
+    /// entirely (a conversation-list cell's own accessibility label can
+    /// also contain the word "message", which used to make a plain title
+    /// search land on a sidebar row instead of the real field). Used by
+    /// the explicit "send" command, which needs to read/confirm the field
+    /// it's about to submit.
+    func messageBodyField() -> AXUIElement? {
+        guard AXIsProcessTrusted(),
+              let messages = NSWorkspace.shared.runningApplications.first(where: {
+                  $0.bundleIdentifier == Self.targetBundleID
+              }) else { return nil }
+
+        let app = AXUIElementCreateApplication(messages.processIdentifier)
+        AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &ref) == .success,
+              let raw = ref else { return nil }
+        let element = raw as! AXUIElement
+        let role = stringAttribute(element, kAXRoleAttribute as CFString) ?? ""
+        guard ["AXTextArea", "AXTextField", "AXTextView"].contains(role) else { return nil }
+        return element
     }
 
     private func stringAttribute(_ element: AXUIElement, _ attribute: CFString) -> String? {

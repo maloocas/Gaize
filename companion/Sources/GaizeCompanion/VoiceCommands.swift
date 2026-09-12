@@ -549,7 +549,13 @@ final class VoiceCommands {
 
         let language = AppSettings.shared.language
         let pending = segments[dictationStartIndex...].joined(separator: " ")
+        // Reserved command words - never typed, even into an armed field.
+        // Without this, "explain" said while the message field was armed
+        // for dictation was typed literally into the message instead of
+        // firing the explain command (it isn't a select keyword, so it
+        // sailed through the check above and into fireDictation).
         if language.selectKeywords.contains(where: pending.contains) { return nil }
+        if language.explainKeywords.contains(where: pending.contains) { return nil }
 
         var start = segments.count - 1
         while start > dictationStartIndex, start < segmentArrivals.count,
