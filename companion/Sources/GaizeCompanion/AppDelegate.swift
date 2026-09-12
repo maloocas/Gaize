@@ -1,8 +1,10 @@
 import AppKit
 
-/// Menu-bar entry point. Owns lifecycle of the four pieces:
-/// GazeTracker (camera -> gaze point), Sensing (AX hit-test on the target app),
-/// Overlay (highlight window), Bridge (local WebSocket server to the website).
+/// Menu-bar entry point. Owns lifecycle of the six pieces:
+/// GazeTracker (camera -> gaze point), Sensing (AX hit-test + dwell on the
+/// target app), Overlay (highlight window), Output (TTS), VoiceCommands
+/// (hands-free "select" / "explain"), Bridge (local WebSocket server to the
+/// website).
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
@@ -10,6 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let bridge = Bridge()
     private let sensing = Sensing()
     private let gazeTracker = GazeTracker()
+    private let output = Output()
+    private let voiceCommands = VoiceCommands()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -32,17 +36,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         sensing.onDwellExplain = { [weak self] element in
-            self?.bridge.send(event: "hover", element: element)
-            // TODO: speak element.explanation via TTS / pre-recorded clip
+            guard let self else { return }
+            self.bridge.send(event: "hover", element: element)
+            self.output.speakExplanation(for: element)
         }
 
         sensing.onDwellConfirm = { [weak self] element in
-            self?.bridge.send(event: "action_completed", element: element)
-            // TODO: perform the actual AX action on the element
+            guard let self else { return }
+            self.bridge.send(event: "action_completed", element: element)
+            self.output.speakConfirmation(for: element)
+        }
+
+        voiceCommands.onSelectCommand = { [weak self] in
+            self?.sensing.confirmCurrentElement()
+        }
+
+        voiceCommands.onExplainCommand = { [weak self] in
+            self?.sensing.explainCurrentElement()
         }
 
         bridge.start()
         gazeTracker.start()
+        voiceCommands.start()
     }
 
     @objc private func quit() {
