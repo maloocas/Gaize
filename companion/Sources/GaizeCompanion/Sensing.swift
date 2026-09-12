@@ -19,7 +19,7 @@ final class Sensing {
 
     private let systemWide = AXUIElementCreateSystemWide()
     private var currentAXElement: AXUIElement?
-    private var currentSensed: SensedElement?
+    private(set) var currentSensed: SensedElement?
 
     /// A short rolling window of recent hit-tests (~250ms at the gaze
     /// tracker's 30fps) - a "select" acts on whichever element was hit

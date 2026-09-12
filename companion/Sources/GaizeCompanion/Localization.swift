@@ -121,6 +121,27 @@ enum AppLanguage: String, CaseIterable {
         }
     }
 
+    /// A phrase starting with one of these (after a pause) is a question for
+    /// the AI assistant - "how do I send a message to Lucas".
+    var questionStarters: [String] {
+        switch self {
+        case .english: return [
+            "how do i", "how can i", "how would i", "how to", "how does", "where is", "where's",
+            "what does", "can you show me", "show me how", "help me", "teach me",
+        ]
+        case .spanish: return ["cómo", "como puedo", "dónde está", "donde esta", "qué hace", "ayúdame", "enséñame"]
+        case .french: return ["comment", "où est", "que fait", "aide-moi", "montre-moi"]
+        }
+    }
+
+    var assistantUnavailable: String {
+        switch self {
+        case .english: return "Sorry, I couldn't get an answer right now."
+        case .spanish: return "Lo siento, no pude obtener una respuesta ahora."
+        case .french: return "Désolé, je n'ai pas pu obtenir de réponse pour le moment."
+        }
+    }
+
     var sentConfirmation: String {
         switch self {
         case .english: return "Message sent."
