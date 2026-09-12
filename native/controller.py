@@ -18,7 +18,8 @@ import cv2
 import objc
 import Quartz
 
-from bridge import click, insert_text
+from autocomplete import Autocomplete
+from bridge import click, insert_text, press_return
 from gaze_math import GazeCalibration
 from swipe_decoder import SwipeDecoder
 
@@ -62,6 +63,9 @@ def quartz_cursor():
 TARGETS = ((.08,.08),(.5,.08),(.92,.08),(.08,.5),(.5,.5),(.92,.5),(.08,.92),(.5,.92),(.92,.92))
 PID_FILE = Path("/private/tmp/opengaze.pid")
 SWIPE_WORDS = Path(__file__).with_name("swipe_words.txt")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+CORPUS_FILE = REPO_ROOT / "data" / "corpus.txt"
+PROFILE_FILE = REPO_ROOT / "data" / "profile.json"
 
 
 def _points(region):
@@ -169,7 +173,7 @@ class KeyView(AppKit.NSView):
         self=objc.super(KeyView,self).initWithFrame_(frame)
         if self is None: return None
         self.controller=controller; self.keyTitle=title; self.keyValue=value
-        self.accent=bool(accent); self.hovering=False; self.pressed=False
+        self.accent=int(accent); self.hovering=False; self.pressed=False
         return self
 
     def updateTrackingAreas(self):
@@ -207,13 +211,14 @@ class KeyView(AppKit.NSView):
             AppKit.NSInsetRect(bounds,2,2),KEY_RADIUS,KEY_RADIUS)
         if self.pressed:      fill=(.40,.85,1,1.0)
         elif self.hovering:   fill=(.30,.72,.98,.85)
-        elif self.accent:     fill=(.17,.72,.42,.92)
+        elif self.accent==2:  fill=(.18,.42,.72,.92)   # deliver the text
+        elif self.accent:     fill=(.17,.72,.42,.92)   # deliver it and send
         else:                 fill=(.16,.22,.30,.95)
         AppKit.NSColor.colorWithRed_green_blue_alpha_(*fill).setFill(); path.fill()
         AppKit.NSColor.colorWithWhite_alpha_(1,.92 if self.hovering else .42).setStroke()
         path.setLineWidth_(2); path.stroke()
 
-        long_label=len(self.keyTitle)>2
+        long_label=len(str(self.keyValue))!=1
         attrs={AppKit.NSFontAttributeName:
                    AppKit.NSFont.systemFontOfSize_weight_(
                        17 if long_label else 30, AppKit.NSFontWeightSemibold),
@@ -318,6 +323,7 @@ class NativeController(NSObject):
         self.keyboard_text=""; self.keyboard_target=None
         self.keyboard_glass=None; self.suggestion_buttons=[]
         self.swipe_decoder=SwipeDecoder(SWIPE_WORDS)
+        self.autocomplete=Autocomplete(SWIPE_WORDS,CORPUS_FILE,PROFILE_FILE)
         self.swipe_recording=False; self.swipe_path=[]; self.key_centers={}
         self.swipe_trace_view=None
         self.crosshair_view=CrosshairView.alloc().initWithController_(self)
@@ -620,6 +626,15 @@ class NativeController(NSObject):
             self.show_suggestions(results[1:])
 
     @objc.python_method
+    def refresh_suggestions(self):
+        """Offer word completions for whatever has been typed so far."""
+        try:
+            self.show_suggestions(self.autocomplete.suggest(self.keyboard_text))
+        except Exception:
+            # Suggestions are a convenience; never let them break typing.
+            self.show_suggestions([])
+
+    @objc.python_method
     def show_suggestions(self, words):
         for button in self.suggestion_buttons: button.removeFromSuperview()
         self.suggestion_buttons=[]
@@ -728,13 +743,14 @@ class NativeController(NSObject):
             y-=key_h+10
         self.swipe_decoder.set_layout(self.key_centers,key_w)
 
-        actions=(("⌫","DELETE",1.0),("SPACE","SPACE",2.6),
-                 ("SWIPE","SWIPE",1.0),("CLOSE","CLOSE",1.0),
-                 ("TYPE INTO APP ↗","INSERT",2.0))
+        actions=(("⌫","DELETE",1.0),("SPACE","SPACE",2.2),
+                 ("SWIPE","SWIPE",0.9),("CLOSE","CLOSE",0.9),
+                 ("TYPE INTO APP ↗","INSERT",1.7),("SEND ⏎","ENTER",1.3))
         gap=10; unit=(width-60-gap*(len(actions)-1))/sum(a[2] for a in actions); x=30
         for label,value,span in actions:
             glass.addSubview_(self.make_key(
-                label,value,((x,22),(unit*span,60)),value=="INSERT"))
+                label,value,((x,22),(unit*span,60)),
+                2 if value=="INSERT" else 1 if value=="ENTER" else 0))
             x+=unit*span+gap
 
         self.swipe_trace_view=SwipeTraceView.alloc().initWithController_frame_(
@@ -754,7 +770,7 @@ class NativeController(NSObject):
         if fresh:
             self.keyboard_text=""
             self.keyboard_display.setStringValue_("")
-            self.show_suggestions([])
+            self.refresh_suggestions()
         self.keyboard_title.setStringValue_(
             f"POINT + BLINK TO TYPE INTO {target['app'].upper()}   ·   ESC TO CLOSE")
         # orderFrontRegardless, never makeKeyAndOrderFront_: the target app must
@@ -788,14 +804,32 @@ class NativeController(NSObject):
             self.hideKeyboard_(None)
             if text and target: insert_text(int(target["pid"]),text)
             return
+        elif value=="ENTER":
+            # Deliver whatever has been composed, then Return. With an empty
+            # buffer this is just Return, which is how you accept a dialog or
+            # submit a field without typing anything first.
+            text=self.keyboard_text; target=self.keyboard_target
+            self.hideKeyboard_(None)
+            if target:
+                if text: insert_text(int(target["pid"]),text)
+                press_return(int(target["pid"]))
+            return
         elif value.startswith("SUGGEST:"):
-            word=value.split(":",1)[1]; parts=self.keyboard_text.rstrip().split()
-            if parts: parts[-1]=word
-            else: parts=[word]
-            self.keyboard_text=" ".join(parts)+" "
-            self.show_suggestions([])
+            # A suggestion means two different things depending on where the
+            # caret is, and getting it wrong eats a finished word. Mid-word it
+            # completes what is being typed and replaces it; after a space it is
+            # a predicted NEXT word and must be appended. Unconditionally
+            # replacing turned "i need some " + "water" into "i need water".
+            word=value.split(":",1)[1]
+            if self.keyboard_text and not self.keyboard_text.endswith(" "):
+                parts=self.keyboard_text.rstrip().split()
+                parts[-1]=word
+                self.keyboard_text=" ".join(parts)+" "
+            else:
+                self.keyboard_text=self.keyboard_text+word+" "
         else: self.keyboard_text+=value
         self.keyboard_display.setStringValue_(self.keyboard_text)
+        self.refresh_suggestions()
 
     @objc.python_method
     def process(self,gaze,ear,now):
