@@ -39,6 +39,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// message body rather than adding more recipients.
     private var filledRecipientField: AXUIElement?
     private var lastWebsiteOpenAt = Date.distantPast
+    /// Set once we've actually opened the website URL - distinct from
+    /// bridge.isConnected (which drops on a background-tab-throttled
+    /// WebSocket well before the tab itself closes) and from "is some
+    /// browser window running" (true almost always, regardless of whether
+    /// it's ever loaded our page).
+    private var hasOpenedWebsite = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         requestAccessibilityPermission()
@@ -124,18 +130,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.output.speak("Opening Gaize.")
             // Already open (e.g. coming back after a goal in Messages): switch
             // to it rather than opening the file URL again, which would add
-            // a second tab. Checking the browser process, not bridge.isConnected:
-            // a goal can run long enough in Messages that the browser tab's
-            // WebSocket gets dropped by background-tab throttling well before
-            // the tab itself closes - the website reconnects on its own
-            // (website/app.js's connect() retries every second) without
-            // losing its in-memory state (which goal, quiz progress, ...),
-            // but only if this doesn't reload it out from under that state.
-            // Requiring isConnected here made "gaize website" open a second,
-            // freshly-loaded tab back at the goal list instead, right when
-            // the user wanted to reach the quiz that only the still-open
-            // (if disconnected) tab actually had queued up.
-            if self.bringBrowserToFront() {
+            // a second tab. Gated on hasOpenedWebsite, which we set ourselves
+            // right after actually opening it - not on the browser process
+            // merely running (any browser window at all made bringBrowserToFront
+            // "succeed" and skip opening the site outright, so "open gaize"
+            // silently did nothing the very first time in a session) and not
+            // on bridge.isConnected (a goal can run long enough in Messages
+            // that the tab's WebSocket gets dropped by background-tab
+            // throttling well before the tab itself closes - the website
+            // reconnects on its own, without losing its state, but only if
+            // nothing reloads it out from under that state in the meantime).
+            if self.hasOpenedWebsite, self.bringBrowserToFront() {
                 return
             }
             // Explicitly activate the browser once it opens the page - a
@@ -144,11 +149,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // straight to it" from the user's point of view.
             let config = NSWorkspace.OpenConfiguration()
             config.activates = true
-            NSWorkspace.shared.open(AppDelegate.websiteURL, configuration: config) { app, error in
+            NSWorkspace.shared.open(AppDelegate.websiteURL, configuration: config) { [weak self] app, error in
                 if let error {
                     print("AppDelegate: failed to open website: \(error)")
                     return
                 }
+                self?.hasOpenedWebsite = true
                 app?.activate(options: [])
             }
         }
@@ -482,8 +488,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if attempt == 0 {
             let config = NSWorkspace.OpenConfiguration()
             config.activates = false
-            NSWorkspace.shared.open(AppDelegate.websiteURL, configuration: config) { _, error in
-                if let error { print("AppDelegate: failed to open website: \(error)") }
+            NSWorkspace.shared.open(AppDelegate.websiteURL, configuration: config) { [weak self] _, error in
+                if let error {
+                    print("AppDelegate: failed to open website: \(error)")
+                    return
+                }
+                self?.hasOpenedWebsite = true
             }
         }
         guard attempt < 10 else {
@@ -509,8 +519,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if attempt == 0 {
             let config = NSWorkspace.OpenConfiguration()
             config.activates = bringToFront
-            NSWorkspace.shared.open(AppDelegate.websiteURL, configuration: config) { _, error in
-                if let error { print("AppDelegate: failed to open website: \(error)") }
+            NSWorkspace.shared.open(AppDelegate.websiteURL, configuration: config) { [weak self] _, error in
+                if let error {
+                    print("AppDelegate: failed to open website: \(error)")
+                    return
+                }
+                self?.hasOpenedWebsite = true
             }
         }
         guard attempt < 10 else {
