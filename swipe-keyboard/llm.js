@@ -33,8 +33,8 @@ export async function decodeSentence(slots, {
       input: buildPrompt(trimmed, priorText),
     }),
   });
+  if (!res.ok) throw new Error(`${res.status} ${(await res.text()).slice(0, 200)}`);
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || res.statusText);
   return data.output
     .filter((o) => o.type === 'message')
     .flatMap((o) => o.content)
