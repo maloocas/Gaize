@@ -31,7 +31,8 @@ import time
 
 import Quartz
 import ApplicationServices as AS
-from AppKit import NSRunningApplication, NSWorkspace
+from AppKit import (NSPasteboard, NSPasteboardTypeString,
+                    NSRunningApplication, NSWorkspace)
 
 HOST, PORT = "127.0.0.1", 8766
 KEYBOARD = Path(__file__).with_name("keyboard.py")
@@ -196,7 +197,7 @@ def _show_keyboard(target: dict) -> None:
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def click():
+def click(show_keyboard: bool = True):
     point = Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
     for kind in (Quartz.kCGEventLeftMouseDown, Quartz.kCGEventLeftMouseUp):
         event = Quartz.CGEventCreateMouseEvent(
@@ -206,9 +207,30 @@ def click():
     # the keyboard only for an editable control—not merely any blink click.
     time.sleep(0.12)
     target = _focused_editable()
-    if target:
+    if target and show_keyboard:
         _show_keyboard(target)
     return target
+
+
+def insert_text(pid: int, text: str) -> bool:
+    """Paste into the target app and restore the user's clipboard afterward."""
+    if not activate(pid):
+        return False
+    time.sleep(.2)
+    pasteboard=NSPasteboard.generalPasteboard()
+    previous=pasteboard.stringForType_(NSPasteboardTypeString)
+    pasteboard.clearContents()
+    pasteboard.setString_forType_(text,NSPasteboardTypeString)
+    source=Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
+    for is_down in (True,False):
+        event=Quartz.CGEventCreateKeyboardEvent(source,9,is_down)  # V
+        Quartz.CGEventSetFlags(event,Quartz.kCGEventFlagMaskCommand)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap,event)
+    time.sleep(.35)
+    pasteboard.clearContents()
+    if previous is not None:
+        pasteboard.setString_forType_(previous,NSPasteboardTypeString)
+    return True
 
 
 def type_text(text):

@@ -18,7 +18,7 @@ import cv2
 import objc
 import Quartz
 
-from bridge import click, screen_size
+from bridge import click, insert_text
 from gaze_math import GazeCalibration
 
 
@@ -169,6 +169,8 @@ class NativeController(NSObject):
         self.closed_since=0.0; self.last_blink=0.0; self.smooth=[.5,.5]
         self.click_flash_until=0.0; self.drag_mode=False
         self.pending_blink=False; self.pending_blink_at=0.0; self.blink_generation=0
+        self.keyboard_window=None; self.keyboard_display=None
+        self.keyboard_text=""; self.keyboard_target=None
         self.crosshair_view=CrosshairView.alloc().initWithController_(self)
         self.crosshair_window=AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             ((0,0),(52,52)),AppKit.NSWindowStyleMaskBorderless,
@@ -309,7 +311,9 @@ class NativeController(NSObject):
     def commitBlink_(self, generation):
         if not self.pending_blink or int(generation)!=self.blink_generation: return
         self.pending_blink=False
-        self.flashCrosshair_(None); click()
+        self.flashCrosshair_(None)
+        target=click(show_keyboard=False)
+        if target and int(target["pid"]) != os.getpid(): self.showKeyboard_(target)
 
     def toggleDrag_(self, _sender):
         point=Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
@@ -322,6 +326,71 @@ class NativeController(NSObject):
         Quartz.CGEventPost(Quartz.kCGHIDEventTap,
             Quartz.CGEventCreateMouseEvent(None,kind,point,Quartz.kCGMouseButtonLeft))
         self.crosshair_view.setNeedsDisplay_(True)
+
+    def showKeyboard_(self, target):
+        self.keyboard_target=target; self.keyboard_text=""
+        screen=AppKit.NSScreen.mainScreen().frame(); width=screen.size.width
+        height=min(590,screen.size.height*.58)
+        self.keyboard_window=AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            ((0,0),(width,height)),AppKit.NSWindowStyleMaskBorderless,
+            AppKit.NSBackingStoreBuffered,False)
+        self.keyboard_window.setLevel_(AppKit.NSFloatingWindowLevel)
+        self.keyboard_window.setCollectionBehavior_(AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces)
+        glass=AppKit.NSVisualEffectView.alloc().initWithFrame_(((0,0),(width,height)))
+        glass.setMaterial_(AppKit.NSVisualEffectMaterialHUDWindow)
+        glass.setBlendingMode_(AppKit.NSVisualEffectBlendingModeBehindWindow)
+        glass.setState_(AppKit.NSVisualEffectStateActive)
+        self.keyboard_window.setContentView_(glass)
+        title=AppKit.NSTextField.labelWithString_(
+            f"POINT + BLINK TO TYPE INTO {target['app']}")
+        title.setFrame_(((28,height-44),(width-56,28)))
+        title.setFont_(AppKit.NSFont.boldSystemFontOfSize_(16)); title.setTextColor_(AppKit.NSColor.cyanColor())
+        glass.addSubview_(title)
+        self.keyboard_display=AppKit.NSTextField.alloc().initWithFrame_(((28,height-112),(width-56,54)))
+        self.keyboard_display.setEditable_(False); self.keyboard_display.setSelectable_(False)
+        self.keyboard_display.setFont_(AppKit.NSFont.systemFontOfSize_(30))
+        self.keyboard_display.setBezeled_(False); self.keyboard_display.setDrawsBackground_(True)
+        self.keyboard_display.setBackgroundColor_(AppKit.NSColor.colorWithWhite_alpha_(1,.82))
+        self.keyboard_display.setTextColor_(AppKit.NSColor.colorWithWhite_alpha_(.08,1))
+        glass.addSubview_(self.keyboard_display)
+        rows=("QWERTYUIOP","ASDFGHJKL","ZXCVBNM")
+        y=height-190
+        for row in rows:
+            gap=10; key_h=72; key_w=min(112,(width-56-gap*(len(row)-1))/len(row))
+            total=key_w*len(row)+gap*(len(row)-1); x=(width-total)/2
+            for letter in row:
+                glass.addSubview_(self.makeKey_(letter,letter.lower(),((x,y),(key_w,key_h))))
+                x+=key_w+gap
+            y-=key_h+12
+        actions=(("⌫ DELETE","DELETE",1.0),("SPACE","SPACE",2.0),
+                 ("CANCEL","CANCEL",1.0),("TYPE INTO APP ↗","INSERT",1.7))
+        gap=10; unit=(width-56-gap*(len(actions)-1))/sum(a[2] for a in actions); x=28
+        for label,value,span in actions:
+            button=self.makeKey_(label,value,((x,24),(unit*span,70)),value=="INSERT")
+            glass.addSubview_(button); x+=unit*span+gap
+        self.keyboard_window.makeKeyAndOrderFront_(None); AppKit.NSApp.activateIgnoringOtherApps_(True)
+
+    def makeKey_(self, title, value, frame, accent=False):
+        button=AppKit.NSButton.alloc().initWithFrame_(frame)
+        button.setTitle_(title); button.setRepresentedObject_(value)
+        button.setTarget_(self); button.setAction_("keyboardKey:")
+        button.setFont_(AppKit.NSFont.boldSystemFontOfSize_(18 if len(title)>2 else 24))
+        button.setBezelStyle_(AppKit.NSBezelStyleRounded)
+        if accent: button.setKeyEquivalent_("\r")
+        return button
+
+    def keyboardKey_(self, sender):
+        value=str(sender.representedObject())
+        if value=="DELETE": self.keyboard_text=self.keyboard_text[:-1]
+        elif value=="SPACE": self.keyboard_text+=" "
+        elif value=="CANCEL": self.keyboard_window.orderOut_(None); return
+        elif value=="INSERT":
+            text=self.keyboard_text; target=self.keyboard_target
+            self.keyboard_window.orderOut_(None)
+            if text and target: insert_text(int(target["pid"]),text)
+            return
+        else: self.keyboard_text+=value
+        self.keyboard_display.setStringValue_(self.keyboard_text)
 
     @objc.python_method
     def process(self,gaze,ear,now):
