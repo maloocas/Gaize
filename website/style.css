@@ -517,3 +517,14 @@ body {
     gap: 12px;
   }
 }
+
+/* Answer letters (A-D) so a quiz can be answered by voice - "B", "option C".
+   Drawn with a counter so each button's text stays exactly the answer. */
+.quiz-options { counter-reset: quiz-option; }
+.quiz-option::before {
+  counter-increment: quiz-option;
+  content: counter(quiz-option, upper-alpha) ".";
+  font-weight: 700;
+  opacity: 0.7;
+  margin-right: 0.5em;
+}

@@ -27,6 +27,9 @@ final class Bridge {
     private var connections: [NWConnection] = []
     /// Whether the website is open and connected.
     var isConnected: Bool { !connections.isEmpty }
+    /// The website's current screen ("goal-list", "goal", "quiz",
+    /// "feedback", ...), from its page_state reports.
+    private(set) var websiteMode: String?
     private let queue = DispatchQueue(label: "gaize.bridge")
 
     func start() {
@@ -130,6 +133,10 @@ final class Bridge {
         case "page_state":
             // Which screen the website is on - logged for observability.
             print("Bridge: page_state mode=\(json["mode"] ?? "?") goal=\(json["goal"] ?? "none")")
+            let mode = json["mode"] as? String
+            DispatchQueue.main.async { [weak self] in
+                self?.websiteMode = mode
+            }
             for button in (json["buttons"] as? [[String: Any]]) ?? [] {
                 print("Bridge: button \"\(button["t"] ?? "")\" at \(button["x"] ?? 0) \(button["y"] ?? 0)")
             }

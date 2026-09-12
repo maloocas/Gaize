@@ -47,16 +47,21 @@ enum AppLanguage: String, CaseIterable {
             // ("Opening Gaize", our own reply, doesn't contain any of these.)
             "open gaize", "open gaze", "open gays", "open guys", "open gay", "open days", "open case",
             "open the gaize", "open gauze",
+            // Coming back to the site after doing a goal in Messages.
+            "gaize website", "gaze website", "guys website", "gay website", "go to gaize",
+            "back to gaize", "go to the website", "back to the website", "go to website",
         ]
         case .spanish: return [
             "abrir sitio web", "abrir el sitio web", "mostrar objetivos",
             "gaize abre", "gay abre", "gase abre",
             "abre gaize", "abrir gaize", "abre gay", "abre gase",
+            "sitio de gaize", "volver a gaize", "ir a gaize",
         ]
         case .french: return [
             "ouvrir le site", "ouvrir le site web", "afficher les objectifs",
             "gaize ouvre", "gay ouvre", "gaz ouvre",
             "ouvre gaize", "ouvrir gaize", "ouvre gay", "ouvre gaz",
+            "site gaize", "retour à gaize", "aller sur gaize",
         ]
         }
     }
@@ -91,7 +96,7 @@ enum AppLanguage: String, CaseIterable {
 
     var takeQuizKeywords: [String] {
         switch self {
-        case .english: return ["take a quiz", "take quiz", "start quiz"]
+        case .english: return ["take a quiz", "take quiz", "start quiz", "take the quiz", "start the quiz", "quiz me"]
         case .spanish: return ["hacer un cuestionario", "empezar cuestionario"]
         case .french: return ["faire un quiz", "commencer le quiz"]
         }
