@@ -115,9 +115,16 @@ class NativeController(NSObject):
 
     def startTarget_(self, _sender):
         if self.failed: return
-        self.collecting=[]
+        # Show the target before collecting. Sampling during the eye movement
+        # toward a new target compresses all nine measurements toward center.
+        self.collecting=None
         self.view.setNeedsDisplay_(True)
-        self.performSelector_withObject_afterDelay_("captureTarget:",None,.75)
+        self.performSelector_withObject_afterDelay_("beginCollection:",None,.85)
+
+    def beginCollection_(self, _sender):
+        if self.failed: return
+        self.collecting=[]
+        self.performSelector_withObject_afterDelay_("captureTarget:",None,1.15)
 
     def captureTarget_(self, _sender):
         samples=self.collecting or []; self.collecting=None
