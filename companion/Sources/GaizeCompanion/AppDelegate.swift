@@ -143,6 +143,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.performDictation(text)
         }
 
+        voiceCommands.onSendCommand = { [weak self] in
+            self?.performSend()
+        }
+
+        bridge.onDebugSend = { [weak self] in
+            self?.performSend()
+        }
+
         bridge.onDebugDictate = { [weak self] text in
             self?.performDictation(text)
         }
@@ -252,6 +260,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         dictationKey = nil
         dictationElement = nil
+    }
+
+    /// "send": focuses Messages' message body and presses Return, which is
+    /// how Messages sends (there's no send button). Refuses on an empty body
+    /// so a stray "send" can't do anything surprising.
+    private func performSend() {
+        let language = AppSettings.shared.language
+        guard let messages = NSWorkspace.shared.runningApplications.first(where: {
+            $0.bundleIdentifier == "com.apple.MobileSMS"
+        }) else {
+            print("AppDelegate: send - Messages not running")
+            return
+        }
+        if !messages.isActive {
+            messages.activate(options: [])
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+        guard let body = sensing.focusElement(forElementDescribed: "message") else {
+            print("AppDelegate: send - no message field found")
+            output.speak(language.nothingToSend)
+            return
+        }
+        var value: CFTypeRef?
+        AXUIElementCopyAttributeValue(body, kAXValueAttribute as CFString, &value)
+        let text = ((value as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        print("AppDelegate: send - message field value \"\(text)\"")
+        guard !text.isEmpty else {
+            output.speak(language.nothingToSend)
+            return
+        }
+        Thread.sleep(forTimeInterval: 0.15)
+        Dictation.pressReturnToSend()
+        dictationKey = nil
+        dictationElement = nil
+        filledRecipientField = nil
+        output.speak(language.sentConfirmation)
     }
 
     /// Resolved at compile time from this source file's location, so "open

@@ -99,6 +99,33 @@ enum AppLanguage: String, CaseIterable {
         }
     }
 
+    /// Sends the message typed into Messages' body. Matched only against a
+    /// whole utterance (exactly one of these), never as a substring - so a
+    /// dictated "send me the file" is typed, not sent half-written.
+    var sendKeywords: [String] {
+        switch self {
+        case .english: return ["send", "send it", "send message", "send the message", "send text", "send the text"]
+        case .spanish: return ["enviar", "envía", "envia", "enviar mensaje", "envíalo", "envialo"]
+        case .french: return ["envoyer", "envoie", "envoyer le message", "envoie-le"]
+        }
+    }
+
+    var sentConfirmation: String {
+        switch self {
+        case .english: return "Message sent."
+        case .spanish: return "Mensaje enviado."
+        case .french: return "Message envoyé."
+        }
+    }
+
+    var nothingToSend: String {
+        switch self {
+        case .english: return "There's no message to send yet."
+        case .spanish: return "Todavía no hay mensaje para enviar."
+        case .french: return "Il n'y a pas encore de message à envoyer."
+        }
+    }
+
     var genericExplanationTemplate: (String) -> String {
         switch self {
         case .english: return { "This is the \($0)." }

@@ -39,6 +39,12 @@ enum Dictation {
         CGEvent(keyboardEventSource: source, virtualKey: returnKeyCode, keyDown: false)?.post(tap: .cghidEventTap)
     }
 
+    /// Sends the Messages draft - Return in the message body. Only called
+    /// by the explicit "send" voice command, after checking the body has text.
+    static func pressReturnToSend() {
+        confirmAutocomplete()
+    }
+
     /// Placeholder for the teammate's on-screen keyboard. macOS's built-in
     /// Accessibility Keyboard is actually KeyboardAccessAgent.app
     /// (com.apple.KeyboardAccessAgent) under the hood, not the more
