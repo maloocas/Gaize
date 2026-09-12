@@ -26,3 +26,10 @@ def test_mapping_clamps_beyond_calibrated_edges():
     calibration = GazeCalibration(samples())
     assert calibration.map(.90, .10) == (0.0, 0.0)
     assert calibration.map(.10, .90) == (1.0, 1.0)
+
+
+def test_small_native_pupil_range_is_expanded():
+    calibration = GazeCalibration(samples(xs=(.504, .500, .496),
+                                               ys=(.496, .500, .504)))
+    assert calibration.map(.504, .496) == (0.0, 0.0)
+    assert calibration.map(.496, .504) == (1.0, 1.0)

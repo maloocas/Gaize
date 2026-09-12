@@ -59,8 +59,11 @@ class GazeCalibration:
         self.top = statistics.median(s[1] for s in samples if s[3] <= .15)
         self.center_y = statistics.median(s[1] for s in samples if .35 <= s[3] <= .65)
         self.bottom = statistics.median(s[1] for s in samples if s[3] >= .85)
+        # Apple Vision pupil coordinates move only a few thousandths across a
+        # laptop display. Calibration is precisely what expands that small but
+        # repeatable signal to the full pointer range.
         if min(abs(self.center_x-self.left), abs(self.right-self.center_x),
-               abs(self.center_y-self.top), abs(self.bottom-self.center_y)) < .008:
+               abs(self.center_y-self.top), abs(self.bottom-self.center_y)) < .002:
             raise ValueError("eye movement range was too small; keep your head still and follow each dot")
 
     @staticmethod
