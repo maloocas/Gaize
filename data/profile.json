@@ -1,0 +1,30 @@
+{
+  "name": "Sam",
+  "about": "Lives at home with a day nurse. Uses a wheelchair. Watches baseball, reads a lot. Gets tired in the late afternoon and prefers short sentences then.",
+  "people": [
+    "Maya",
+    "Dad",
+    "Dr. Okafor",
+    "Ruth",
+    "the nurse"
+  ],
+  "topics": [
+    "physical therapy",
+    "the Mariners game",
+    "new wheelchair cushion",
+    "sleeping badly",
+    "back pain"
+  ],
+  "phrases": [
+    "I want to go home",
+    "Can you turn me please",
+    "My back hurts a lot",
+    "I am tired now",
+    "Please call Maya",
+    "I need some water",
+    "Not right now thanks",
+    "Yes that sounds good",
+    "Can we talk later",
+    "I did not sleep well"
+  ]
+}

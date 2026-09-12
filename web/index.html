@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLM-Accelerated AAC</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <h1>LLM-Accelerated AAC</h1>
+    <p class="sub">Single-switch scanning &middot; research prototype</p>
+  </div>
+  <div class="status-cluster">
+    <span id="providerBadge" class="badge" title="Candidate source">checking&hellip;</span>
+    <span id="switchBadge" class="badge badge-key" title="Active switch input">switch: SPACE</span>
+  </div>
+</header>
+
+<main>
+  <!-- ============ LEFT: the conversation and the utterance being built ======= -->
+  <section class="col col-main">
+
+    <div class="panel panel-speech">
+      <div class="panel-head">
+        <h2>Utterance</h2>
+        <div class="mode-toggle" role="group" aria-label="Mode">
+          <button id="modeBaseline" class="mode-btn" data-mode="baseline">Baseline</button>
+          <button id="modeAccel" class="mode-btn is-active" data-mode="accelerated">Accelerated</button>
+        </div>
+      </div>
+
+      <div id="tokenStrip" class="token-strip" aria-live="polite">
+        <span class="token-empty">no selections yet</span>
+      </div>
+
+      <div class="spoken-row">
+        <div id="spokenText" class="spoken" aria-live="polite">&nbsp;</div>
+        <button id="speakBtn" class="btn btn-speak" disabled>Speak</button>
+      </div>
+
+      <div class="metrics">
+        <div class="metric"><span id="mSelections" class="metric-val">0</span><span class="metric-lab">selections</span></div>
+        <div class="metric"><span id="mTime" class="metric-val">0.0s</span><span class="metric-lab">elapsed</span></div>
+        <div class="metric"><span id="mLatency" class="metric-val">&ndash;</span><span class="metric-lab">last generation</span></div>
+        <button id="resetTrial" class="btn btn-ghost">Reset trial</button>
+      </div>
+    </div>
+
+    <!-- ============ The scanning grid ============ -->
+    <div class="panel panel-scan">
+      <div class="panel-head">
+        <h2 id="scanTitle">Scanning</h2>
+        <div class="scan-controls">
+          <label class="speed">
+            scan interval
+            <input id="scanSpeed" type="range" min="300" max="1600" step="50" value="800">
+            <output id="scanSpeedOut">800ms</output>
+          </label>
+          <button id="startStop" class="btn btn-primary">Start scanning</button>
+        </div>
+      </div>
+
+      <p id="scanHint" class="hint">
+        Press <kbd>Space</kbd> (or blink, if enabled) to select whatever is highlighted.
+        Row-column scanning: first pick a row, then a cell.
+      </p>
+
+      <div id="grid" class="grid" role="grid" aria-label="Scanning grid"></div>
+    </div>
+
+    <!-- ============ Candidates ============ -->
+    <div class="panel panel-cands" id="candPanel">
+      <div class="panel-head">
+        <h2>Sentence candidates</h2>
+        <span id="candMeta" class="meta"></span>
+      </div>
+      <div id="candidates" class="candidates">
+        <p class="hint">Select a few letters, then choose <strong>GENERATE</strong> in the grid.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ RIGHT: context, profile, camera, trials ============ -->
+  <aside class="col col-side">
+
+    <div class="panel">
+      <div class="panel-head"><h2>Conversation context</h2></div>
+      <p class="hint">What the other person just said. Candidates are conditioned on this.</p>
+      <div id="transcript" class="transcript"></div>
+      <form id="partnerForm" class="partner-form">
+        <input id="partnerInput" type="text" placeholder="They said&hellip;" autocomplete="off">
+        <button class="btn btn-primary" type="submit">Add</button>
+      </form>
+      <div class="quick-turns">
+        <button class="chip" data-turn="How are you feeling today?">How are you feeling today?</button>
+        <button class="chip" data-turn="Do you want anything before I go?">Anything before I go?</button>
+        <button class="chip" data-turn="Is there anyone I should call for you?">Anyone I should call?</button>
+        <button class="chip" data-turn="Want me to put the game on?">Put the game on?</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Blink switch</h2>
+        <span id="blinkBadge" class="badge badge-off">off</span>
+      </div>
+      <p class="hint">
+        Webcam blink detection as a binary switch. The keyboard switch keeps working
+        either way &mdash; this is a layer on top, never a dependency.
+      </p>
+      <div class="cam-wrap">
+        <video id="cam" playsinline muted></video>
+        <canvas id="camOverlay"></canvas>
+        <div id="camPlaceholder" class="cam-placeholder">camera off</div>
+      </div>
+      <div class="ear-readout">
+        <div class="ear-bar"><div id="earFill" class="ear-fill"></div><div id="earThresh" class="ear-thresh"></div></div>
+        <span id="earVal" class="meta">EAR &ndash;</span>
+      </div>
+      <label class="speed">
+        blink threshold
+        <input id="earSlider" type="range" min="0.10" max="0.35" step="0.005" value="0.21">
+        <output id="earSliderOut">0.210</output>
+      </label>
+      <div class="row-btns">
+        <button id="camToggle" class="btn btn-primary">Enable camera</button>
+        <button id="calibrateBtn" class="btn btn-ghost" disabled>Calibrate</button>
+      </div>
+      <p id="blinkStatus" class="meta"></p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Personal vocabulary</h2></div>
+      <p class="hint">Names, topics and saved phrases that sharpen candidate ranking.</p>
+      <label class="field">name <input id="pName" type="text"></label>
+      <label class="field">notes <textarea id="pAbout" rows="2"></textarea></label>
+      <label class="field">people (one per line) <textarea id="pPeople" rows="3"></textarea></label>
+      <label class="field">topics (one per line) <textarea id="pTopics" rows="3"></textarea></label>
+      <label class="field">saved phrases (one per line) <textarea id="pPhrases" rows="5"></textarea></label>
+      <button id="saveProfile" class="btn btn-primary">Save vocabulary</button>
+      <span id="profileSaved" class="meta"></span>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Trial log</h2></div>
+      <p class="hint">Baseline vs accelerated, for quoting a real number on stage.</p>
+      <div id="trialSummary" class="trial-summary">no trials yet</div>
+      <button id="refreshTrials" class="btn btn-ghost">Refresh</button>
+    </div>
+  </aside>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
