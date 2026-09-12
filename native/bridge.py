@@ -33,7 +33,7 @@ import Quartz
 import ApplicationServices as AS
 from AppKit import NSRunningApplication, NSWorkspace
 
-HOST, PORT = "127.0.0.1", 8765
+HOST, PORT = "127.0.0.1", 8766
 KEYBOARD = Path(__file__).with_name("keyboard.py")
 
 LOCAL_ORIGINS = ("http://localhost:8000", "http://127.0.0.1:8000")

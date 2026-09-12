@@ -57,6 +57,9 @@ For whole-computer control on macOS, start the bridge in a second terminal:
 python3 native/bridge.py
 ```
 
+The bridge listens on `127.0.0.1:8766` (port `8765` was retired to avoid a
+collision with older bridge processes).
+
 Grant Terminal Accessibility permission when macOS asks. The bridge binds only
 to `127.0.0.1` and accepts the local app and production demo origins. Enter the
 six-digit pairing code shown in the terminal when using the deployed site.
