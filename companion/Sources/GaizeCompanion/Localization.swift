@@ -43,14 +43,20 @@ enum AppLanguage: String, CaseIterable {
         case .english: return [
             "open website", "open the website", "show website", "open goals", "show goals",
             "gaize open", "gaze open", "gay open", "days open", "guys open", "case open",
+            // "open Gaize" order too - the natural thing to say after "hey Gaize".
+            // ("Opening Gaize", our own reply, doesn't contain any of these.)
+            "open gaize", "open gaze", "open gays", "open guys", "open gay", "open days", "open case",
+            "open the gaize", "open gauze",
         ]
         case .spanish: return [
             "abrir sitio web", "abrir el sitio web", "mostrar objetivos",
             "gaize abre", "gay abre", "gase abre",
+            "abre gaize", "abrir gaize", "abre gay", "abre gase",
         ]
         case .french: return [
             "ouvrir le site", "ouvrir le site web", "afficher les objectifs",
             "gaize ouvre", "gay ouvre", "gaz ouvre",
+            "ouvre gaize", "ouvrir gaize", "ouvre gay", "ouvre gaz",
         ]
         }
     }
