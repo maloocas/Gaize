@@ -178,15 +178,32 @@ final class Sensing {
     /// "send button") to an on-screen frame, by walking the target app's AX
     /// tree for a matching title/description. Used to draw the overlay.
     func screenFrame(forElementDescribed description: String) -> CGRect? {
+        guard let windows = targetAppWindows() else { return nil }
+
+        print("Sensing.screenFrame: searching \"\(Self.targetAppName)\" for \"\(description)\"")
+        for window in windows {
+            if let found = findElement(in: window, matching: description, depth: 0) {
+                return found.sensed.frame
+            }
+        }
+
+        print("Sensing.screenFrame: no match for \"\(description)\" in \(Self.targetAppName)")
+        return nil
+    }
+
+    /// Activates the target app if needed and returns its windows - shared
+    /// by screenFrame and focusElement, both of which need to walk the same
+    /// AX tree.
+    private func targetAppWindows() -> [AXUIElement]? {
         guard AXIsProcessTrusted() else {
-            print("Sensing.screenFrame: not trusted")
+            print("Sensing: not trusted")
             return nil
         }
 
         guard let targetApp = NSWorkspace.shared.runningApplications.first(where: {
             $0.bundleIdentifier == Self.targetBundleID
         }) else {
-            print("Sensing.screenFrame: \(Self.targetAppName) is not running")
+            print("Sensing: \(Self.targetAppName) is not running")
             return nil
         }
 
@@ -197,12 +214,11 @@ final class Sensing {
         // Messages, bringing it to the front here is also just correct UX,
         // not only a technical workaround.
         if !targetApp.isActive {
-            print("Sensing.screenFrame: activating \(Self.targetAppName) (was backgrounded)")
+            print("Sensing: activating \(Self.targetAppName) (was backgrounded)")
             targetApp.activate(options: [])
             Thread.sleep(forTimeInterval: 0.5)
         }
 
-        print("Sensing.screenFrame: searching \"\(Self.targetAppName)\" for \"\(description)\"")
         let appElement = AXUIElementCreateApplication(targetApp.processIdentifier)
 
         // Messages is a Mac Catalyst (UIKit-on-Mac) app - Catalyst apps
@@ -218,31 +234,19 @@ final class Sensing {
         // full window enumeration errors out.
         var windowsRef: CFTypeRef?
         let windowsResult = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef)
-        var windows: [AXUIElement] = []
 
         if windowsResult == .success, let list = windowsRef as? [AXUIElement] {
-            windows = list
-        } else {
-            print("Sensing.screenFrame: kAXWindowsAttribute failed (axError=\(windowsResult.rawValue)), trying focused window")
-            var focusedRef: CFTypeRef?
-            let focusedResult = AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &focusedRef)
-            if focusedResult == .success, let focused = focusedRef {
-                windows = [focused as! AXUIElement]
-            } else {
-                print("Sensing.screenFrame: kAXFocusedWindowAttribute also failed (axError=\(focusedResult.rawValue))")
-                return nil
-            }
+            return list
         }
 
-        print("Sensing.screenFrame: \(Self.targetAppName) has \(windows.count) window(s)")
-
-        for window in windows {
-            if let found = findElement(in: window, matching: description, depth: 0) {
-                return found.frame
-            }
+        print("Sensing: kAXWindowsAttribute failed (axError=\(windowsResult.rawValue)), trying focused window")
+        var focusedRef: CFTypeRef?
+        let focusedResult = AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &focusedRef)
+        if focusedResult == .success, let focused = focusedRef {
+            return [focused as! AXUIElement]
         }
 
-        print("Sensing.screenFrame: no match for \"\(description)\" in \(Self.targetAppName)")
+        print("Sensing: kAXFocusedWindowAttribute also failed (axError=\(focusedResult.rawValue))")
         return nil
     }
 
@@ -301,13 +305,13 @@ final class Sensing {
         return SensedElement(role: role, title: title, frame: CGRect(origin: position, size: size))
     }
 
-    private func findElement(in element: AXUIElement, matching description: String, depth: Int) -> SensedElement? {
+    private func findElement(in element: AXUIElement, matching description: String, depth: Int) -> (element: AXUIElement, sensed: SensedElement)? {
         guard depth < 25 else { return nil }
 
         if let sensed = describe(element), !sensed.title.isEmpty,
            sensed.title.lowercased().contains(description.lowercased()),
            sensed.frame.width > 0, sensed.frame.height > 0 {
-            return sensed
+            return (element, sensed)
         }
 
         var childrenRef: CFTypeRef?
@@ -319,6 +323,22 @@ final class Sensing {
         for child in children {
             if let found = findElement(in: child, matching: description, depth: depth + 1) {
                 return found
+            }
+        }
+        return nil
+    }
+
+    /// Finds an element in the target app (Messages) by title match and
+    /// gives it AX focus - used to auto-advance from the To: field to the
+    /// message body after a recipient is confirmed, without requiring the
+    /// user to separately look at/select it.
+    @discardableResult
+    func focusElement(forElementDescribed description: String) -> AXUIElement? {
+        guard let windows = targetAppWindows() else { return nil }
+        for window in windows {
+            if let found = findElement(in: window, matching: description, depth: 0) {
+                AXUIElementSetAttributeValue(found.element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+                return found.element
             }
         }
         return nil

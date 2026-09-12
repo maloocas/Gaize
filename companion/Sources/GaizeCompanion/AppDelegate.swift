@@ -190,12 +190,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         Dictation.type(text, into: axElement)
+
         if dictationKey == "to_field" {
             // Accept the top contact-autocomplete suggestion - Return only
             // does this here, never on the message body field, where it
             // would send prematurely.
             Dictation.confirmAutocomplete()
+
+            // Auto-advance: move straight to the message body and arm it
+            // for the next thing said, instead of making the user look at
+            // and separately "select" it - once a recipient is picked, the
+            // next natural thing is to say the message.
+            Thread.sleep(forTimeInterval: 0.2)
+            if let messageField = sensing.focusElement(forElementDescribed: "message") {
+                print("AppDelegate: auto-advanced to message field, arming dictation")
+                dictationKey = "message_field"
+                dictationElement = messageField
+                return
+            }
         }
+
         dictationKey = nil
         dictationElement = nil
     }
