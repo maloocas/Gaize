@@ -73,6 +73,31 @@ class CalibrationView(AppKit.NSView):
                 self.controller.failure_reason
             ).drawAtPoint_withAttributes_((bounds.size.width/2-510,bounds.size.height/2),attrs)
             return
+
+        # Live pupil signal. This intentionally uses the raw within-eye ratio,
+        # so users can see exactly what Vision detects before calibration maps
+        # that small motion to the full display.
+        panel = ((bounds.size.width-300, 35), (260, 190))
+        AppKit.NSColor.colorWithWhite_alpha_(.08,.92).setFill()
+        AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(panel,14,14).fill()
+        live = (self.controller.latest_gaze is not None and
+                time.monotonic()-self.controller.latest_seen < .7)
+        signal = "EYES DETECTED" if live else "LOOKING FOR EYES…"
+        signal_color = (AppKit.NSColor.colorWithRed_green_blue_alpha_(.25,1,.55,1)
+                        if live else AppKit.NSColor.orangeColor())
+        signal_attrs = {AppKit.NSFontAttributeName: AppKit.NSFont.boldSystemFontOfSize_(15),
+                        AppKit.NSForegroundColorAttributeName: signal_color}
+        NSString.stringWithString_(signal).drawAtPoint_withAttributes_(
+            (bounds.size.width-280,190),signal_attrs)
+        AppKit.NSColor.colorWithWhite_alpha_(.35,1).setStroke()
+        box=((bounds.size.width-275,55),(210,120))
+        AppKit.NSBezierPath.bezierPathWithRect_(box).stroke()
+        if live:
+            gx,gy=self.controller.latest_gaze
+            px=bounds.size.width-275+max(0,min(1,gx))*210
+            py=55+max(0,min(1,gy))*120
+            AppKit.NSColor.colorWithRed_green_blue_alpha_(.15,.85,1,1).setFill()
+            AppKit.NSBezierPath.bezierPathWithOvalInRect_(((px-8,py-8),(16,16))).fill()
         index = min(self.controller.target_index, len(TARGETS)-1)
         x, y = TARGETS[index]
         point = (x*bounds.size.width, (1-y)*bounds.size.height)
@@ -96,6 +121,7 @@ class NativeController(NSObject):
         self = objc.super(NativeController, self).init()
         if self is None: return None
         self.running=True; self.control_enabled=False; self.collecting=None; self.failed=False
+        self.latest_gaze=None; self.latest_seen=0.0
         self.failure_reason="Calibration stopped — eyes were not detected. Press R to retry or Escape to exit."
         self.calib_samples=[]; self.calibration=None; self.target_index=0
         self.open_ears=collections.deque(maxlen=120); self.closed_frames=0
@@ -111,6 +137,7 @@ class NativeController(NSObject):
         threading.Thread(target=self.camera_loop,daemon=True).start()
         threading.Thread(target=self.panic_loop,daemon=True).start()
         self.performSelector_withObject_afterDelay_("startTarget:",None,1.5)
+        self.performSelector_withObject_afterDelay_("refreshGaze:",None,.1)
         return self
 
     def startTarget_(self, _sender):
@@ -166,6 +193,7 @@ class NativeController(NSObject):
 
     @objc.python_method
     def process(self,gaze,ear,now):
+        self.latest_gaze=gaze; self.latest_seen=now
         if self.collecting is not None: self.collecting.append(gaze)
         if ear>.14: self.open_ears.append(ear)
         if not self.control_enabled or not self.calibration: return
@@ -181,6 +209,11 @@ class NativeController(NSObject):
         self.smooth[0]=self.smooth[0]*.70+x*.30; self.smooth[1]=self.smooth[1]*.70+y*.30
         width,height=screen_size(); point=Quartz.CGPointMake(self.smooth[0]*width,self.smooth[1]*height)
         Quartz.CGEventPost(Quartz.kCGHIDEventTap,Quartz.CGEventCreateMouseEvent(None,Quartz.kCGEventMouseMoved,point,Quartz.kCGMouseButtonLeft))
+
+    def refreshGaze_(self, _sender):
+        if self.window.isVisible():
+            self.view.setNeedsDisplay_(True)
+            self.performSelector_withObject_afterDelay_("refreshGaze:",None,.1)
 
     @objc.python_method
     def camera_loop(self):
