@@ -191,6 +191,63 @@ enum AppLanguage: String, CaseIterable {
         }
     }
 
+    /// Saying a goal's name opens it on the website (like clicking its card).
+    /// Ids match GOALS in website/app.js. Checked in order, first match wins.
+    /// Never "send message"/"send the message" - those are the send command.
+    var goalCommands: [(id: String, phrases: [String])] {
+        switch self {
+        case .english: return [
+            ("send-a-message", ["send a message", "send a text", "send a new message"]),
+            ("add-an-attachment", ["add an attachment", "add attachment", "attach a file"]),
+            ("search-a-conversation", ["search your messages", "search my messages", "search messages"]),
+            ("start-a-facetime-call", ["start a facetime call", "facetime call", "face time call", "start facetime"]),
+            ("add-an-emoji", ["add an emoji", "add emoji"]),
+            ("filter-conversations", ["filter your conversation list", "filter your conversations",
+                                      "filter my conversations", "filter conversations"]),
+            ("send-a-photo", ["send a photo", "send a picture", "send photo"]),
+            ("send-a-sticker", ["send a sticker", "send sticker"]),
+            ("create-a-poll", ["create a poll", "make a poll", "create poll"]),
+            ("schedule-a-message", ["schedule a message", "schedule a text", "schedule message"]),
+            ("create-a-genmoji", ["create a genmoji", "make a genmoji", "create a gen moji", "create genmoji"]),
+            ("generate-an-image", ["generate an image", "generate image", "make an image"]),
+            ("search-the-web-for-images", ["search the web for images", "search the web", "web images"]),
+            ("add-a-message-effect", ["add a message effect", "message effect", "add an effect"]),
+        ]
+        case .spanish: return [
+            ("send-a-message", ["enviar un mensaje"]),
+            ("add-an-attachment", ["añadir un archivo adjunto", "adjuntar un archivo"]),
+            ("search-a-conversation", ["buscar mensajes", "buscar en mis mensajes"]),
+            ("start-a-facetime-call", ["llamada facetime", "llamada de facetime"]),
+            ("add-an-emoji", ["añadir un emoji", "agregar un emoji"]),
+            ("filter-conversations", ["filtrar conversaciones", "filtrar las conversaciones"]),
+            ("send-a-photo", ["enviar una foto"]),
+            ("send-a-sticker", ["enviar un sticker", "enviar una pegatina"]),
+            ("create-a-poll", ["crear una encuesta"]),
+            ("schedule-a-message", ["programar un mensaje"]),
+            ("create-a-genmoji", ["crear un genmoji"]),
+            ("generate-an-image", ["generar una imagen"]),
+            ("search-the-web-for-images", ["buscar imágenes en la web", "buscar imagenes en la web"]),
+            ("add-a-message-effect", ["efecto de mensaje", "añadir un efecto"]),
+        ]
+        case .french: return [
+            ("send-a-message", ["envoyer un message"]),
+            ("add-an-attachment", ["ajouter une pièce jointe"]),
+            ("search-a-conversation", ["rechercher dans les messages", "rechercher les messages"]),
+            ("start-a-facetime-call", ["appel facetime", "passer un appel facetime"]),
+            ("add-an-emoji", ["ajouter un emoji"]),
+            ("filter-conversations", ["filtrer les conversations"]),
+            ("send-a-photo", ["envoyer une photo"]),
+            ("send-a-sticker", ["envoyer un autocollant", "envoyer un sticker"]),
+            ("create-a-poll", ["créer un sondage"]),
+            ("schedule-a-message", ["programmer un message"]),
+            ("create-a-genmoji", ["créer un genmoji"]),
+            ("generate-an-image", ["générer une image"]),
+            ("search-the-web-for-images", ["rechercher des images sur le web"]),
+            ("add-a-message-effect", ["effet de message", "ajouter un effet"]),
+        ]
+        }
+    }
+
     /// Launches and focuses the Messages app.
     var openMessagesKeywords: [String] {
         switch self {

@@ -81,6 +81,14 @@ final class Sensing {
         guard AXIsProcessTrusted() else { return nil }
 
         var elementRef: AXUIElement?
+        // Our own "select" click shows up here too, and it's resolved after
+        // the UI has changed - selecting compose then read as the user
+        // clicking the To: field that appeared under it, which skipped the
+        // lesson's To: step. Backup for the event tag checked by the monitor.
+        if let last = lastSynthesizedClick, Date().timeIntervalSince(last.at) < 1.5,
+           abs(last.point.x - point.x) < 4, abs(last.point.y - point.y) < 4 {
+            return nil
+        }
         guard AXUIElementCopyElementAtPosition(
             systemWide,
             Float(point.x),
@@ -166,12 +174,20 @@ final class Sensing {
 
     /// Posts a real mouse-down/mouse-up at `point`, in AX/Quartz (top-left
     /// origin) coordinates.
+    /// Tags our own synthesized clicks so the physical-click monitor can
+    /// tell them apart from the user's.
+    static let syntheticClickTag: Int64 = 0x6761_697A // "gaiz"
+    private var lastSynthesizedClick: (point: CGPoint, at: Date)?
+
     private func synthesizeClick(at point: CGPoint) {
+        lastSynthesizedClick = (point, Date())
         let source = CGEventSource(stateID: .hidSystemState)
         let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left)
         let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left)
         down?.setIntegerValueField(.mouseEventClickState, value: 1)
         up?.setIntegerValueField(.mouseEventClickState, value: 1)
+        down?.setIntegerValueField(.eventSourceUserData, value: Self.syntheticClickTag)
+        up?.setIntegerValueField(.eventSourceUserData, value: Self.syntheticClickTag)
         down?.post(tap: .cghidEventTap)
         usleep(30_000)
         up?.post(tap: .cghidEventTap)
