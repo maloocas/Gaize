@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleExecutable</key>
+	<string>GaizeCompanion</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.gaize.companion</string>
+	<key>CFBundleName</key>
+	<string>Gaize</string>
+	<key>CFBundleDisplayName</key>
+	<string>Gaize</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<!-- Menu-bar only: no dock icon, no app menu. -->
+	<key>LSUIElement</key>
+	<true/>
+	<!-- These strings MUST be present or the mic / speech prompts silently
+	     fail. Accessibility (gaze hit-testing + pressing elements) and
+	     Camera (gaze tracking) do not use Info.plist strings for a
+	     non-sandboxed app — they're plain system prompts on first use,
+	     except Camera, which does need NSCameraUsageDescription below. -->
+	<key>NSCameraUsageDescription</key>
+	<string>Gaize uses the camera to track where you're looking on screen.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Gaize listens for voice commands like "select" and "explain" so you can confirm actions hands-free.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Gaize turns your voice commands into text on-device to confirm actions hands-free.</string>
+</dict>
+</plist>
