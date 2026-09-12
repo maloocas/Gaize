@@ -271,7 +271,7 @@ let currentStepIndex = 0;
 let quizAnswers = [];
 let quizIndex = 0;
 let scenarioProgress = 0;
-let mode = "goal-list"; // goal-list | goal | quiz | scenario | feedback
+let mode = "goal-list"; // goal-list | goal-detail | goal | quiz | scenario | feedback
 let selectedLanguage = "en-US";
 
 function connect() {
@@ -329,7 +329,7 @@ function handleCompanionEvent(msg) {
 function renderGoalList() {
   mode = "goal-list";
   show("intro", "goals");
-  hide("active-goal", "quiz");
+  hide("goal-detail", "active-goal", "quiz");
 
   const list = document.getElementById("goal-list");
   list.innerHTML = "";
@@ -345,17 +345,33 @@ function renderGoalList() {
       </span>
       <span class="goal-card-arrow" aria-hidden="true">→</span>
     `;
-    card.addEventListener("click", () => startGoal(goal));
+    card.addEventListener("click", () => showGoalDetail(goal));
     li.appendChild(card);
     list.appendChild(li);
   });
 }
 
-function startGoal(goal) {
+function showGoalDetail(goal) {
   currentGoal = goal;
+  mode = "goal-detail";
+  hide("intro", "goals", "active-goal", "quiz");
+  show("goal-detail");
+
+  document.getElementById("goal-detail-title").textContent = goal.title;
+
+  const preview = document.getElementById("steps-preview");
+  preview.innerHTML = "";
+  goal.steps.forEach((step) => {
+    const li = document.createElement("li");
+    li.textContent = step.instruction;
+    preview.appendChild(li);
+  });
+}
+
+function beginLearning() {
   currentStepIndex = 0;
   mode = "goal";
-  hide("intro", "goals", "quiz");
+  hide("goal-detail", "quiz");
   show("active-goal");
   document.getElementById("followup-choice").hidden = true;
   renderGoal();
@@ -531,7 +547,11 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+document.getElementById("home-link").addEventListener("click", renderGoalList);
+document.getElementById("back-from-detail").addEventListener("click", renderGoalList);
+document.getElementById("btn-learn").addEventListener("click", beginLearning);
 document.getElementById("cancel-goal").addEventListener("click", renderGoalList);
+document.getElementById("cancel-quiz").addEventListener("click", renderGoalList);
 document.getElementById("btn-quiz").addEventListener("click", startQuiz);
 document.getElementById("btn-scenario").addEventListener("click", startScenario);
 document.getElementById("language-select").addEventListener("change", (event) => {

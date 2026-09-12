@@ -71,6 +71,23 @@ body {
   font-weight: 700;
   font-size: 20px;
   letter-spacing: -0.01em;
+  font: inherit;
+  font-weight: 700;
+  color: var(--text);
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.brand:hover {
+  color: var(--accent);
+}
+
+.brand:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .brand-mark {
@@ -247,6 +264,18 @@ body {
   font-size: 20px;
   margin: 0;
   letter-spacing: -0.01em;
+}
+
+.steps-preview {
+  margin: 0 0 20px;
+  padding-left: 20px;
+  display: grid;
+  gap: 8px;
+}
+
+.steps-preview li {
+  font-size: 15px;
+  color: var(--text);
 }
 
 .steps-track {
