@@ -20,10 +20,12 @@ import Quartz
 
 from bridge import click, insert_text
 from gaze_math import GazeCalibration
+from swipe_decoder import SwipeDecoder
 
 
 TARGETS = ((.08,.08),(.5,.08),(.92,.08),(.08,.5),(.5,.5),(.92,.5),(.08,.92),(.5,.92),(.92,.92))
 PID_FILE = Path("/private/tmp/opengaze.pid")
+SWIPE_WORDS = Path(__file__).with_name("swipe_words.txt")
 
 
 def _points(region):
@@ -81,6 +83,26 @@ class CrosshairView(AppKit.NSView):
             line.setLineWidth_(3); line.stroke()
         AppKit.NSColor.whiteColor().setFill()
         AppKit.NSBezierPath.bezierPathWithOvalInRect_(((23,23),(6,6))).fill()
+
+
+class SwipeTraceView(AppKit.NSView):
+    controller=objc.ivar()
+
+    def initWithController_frame_(self,controller,frame):
+        self=objc.super(SwipeTraceView,self).initWithFrame_(frame)
+        if self is not None: self.controller=controller
+        return self
+
+    def hitTest_(self,_point):
+        return None
+
+    def drawRect_(self,_rect):
+        points=self.controller.swipe_path
+        if not self.controller.swipe_recording or len(points)<2: return
+        path=AppKit.NSBezierPath.bezierPath(); path.moveToPoint_(points[0])
+        for point in points[1:]: path.lineToPoint_(point)
+        AppKit.NSColor.colorWithRed_green_blue_alpha_(.15,.85,1,.78).setStroke()
+        path.setLineWidth_(7); path.setLineCapStyle_(AppKit.NSLineCapStyleRound); path.stroke()
 
 
 class CalibrationView(AppKit.NSView):
@@ -171,6 +193,10 @@ class NativeController(NSObject):
         self.pending_blink=False; self.pending_blink_at=0.0; self.blink_generation=0
         self.keyboard_window=None; self.keyboard_display=None
         self.keyboard_text=""; self.keyboard_target=None
+        self.keyboard_glass=None; self.suggestion_buttons=[]
+        self.swipe_decoder=SwipeDecoder(SWIPE_WORDS)
+        self.swipe_recording=False; self.swipe_path=[]; self.key_centers={}
+        self.swipe_trace_view=None
         self.crosshair_view=CrosshairView.alloc().initWithController_(self)
         self.crosshair_window=AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             ((0,0),(52,52)),AppKit.NSWindowStyleMaskBorderless,
@@ -284,7 +310,11 @@ class NativeController(NSObject):
     def updateCrosshair_(self, _timer):
         point=AppKit.NSEvent.mouseLocation()
         self.crosshair_window.setFrameOrigin_((point.x-26,point.y-26))
-        if self.drag_mode:
+        if self.swipe_recording:
+            self.swipe_path.append((point.x,point.y))
+            if self.swipe_trace_view is not None:
+                self.swipe_trace_view.setNeedsDisplay_(True)
+        elif self.drag_mode:
             Quartz.CGEventPost(Quartz.kCGHIDEventTap,
                 Quartz.CGEventCreateMouseEvent(None,Quartz.kCGEventLeftMouseDragged,
                                                point,Quartz.kCGMouseButtonLeft))
@@ -316,6 +346,15 @@ class NativeController(NSObject):
         if target and int(target["pid"]) != os.getpid(): self.showKeyboard_(target)
 
     def toggleDrag_(self, _sender):
+        if self.keyboard_window is not None and self.keyboard_window.isVisible():
+            if self.swipe_recording:
+                self.finishSwipe_()
+            else:
+                self.swipe_recording=True; self.drag_mode=True
+                point=AppKit.NSEvent.mouseLocation(); self.swipe_path=[(point.x,point.y)]
+                self.status_item.button().setTitle_("◆ SWIPE · double blink to finish")
+            self.crosshair_view.setNeedsDisplay_(True)
+            return
         point=Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
         if self.drag_mode:
             kind=Quartz.kCGEventLeftMouseUp; self.drag_mode=False
@@ -327,10 +366,31 @@ class NativeController(NSObject):
             Quartz.CGEventCreateMouseEvent(None,kind,point,Quartz.kCGMouseButtonLeft))
         self.crosshair_view.setNeedsDisplay_(True)
 
+    def finishSwipe_(self):
+        self.swipe_recording=False; self.drag_mode=False
+        results=self.swipe_decoder.decode(self.swipe_path)
+        self.swipe_path=[]; self.status_item.button().setTitle_("● Blink Click · active")
+        if results:
+            self.keyboard_text+=results[0]+" "
+            self.keyboard_display.setStringValue_(self.keyboard_text)
+            self.showSuggestions_(results[1:])
+
+    def showSuggestions_(self, words):
+        for button in self.suggestion_buttons: button.removeFromSuperview()
+        self.suggestion_buttons=[]
+        if not words or self.keyboard_glass is None: return
+        width=self.keyboard_window.frame().size.width
+        gap=10; button_w=min(190,(width-56-gap*(len(words)-1))/len(words)); total=button_w*len(words)+gap*(len(words)-1); x=(width-total)/2
+        y=self.keyboard_window.frame().size.height-194
+        for word in words[:5]:
+            button=self.makeKey_(word,f"SUGGEST:{word}",((x,y),(button_w,48)))
+            self.keyboard_glass.addSubview_(button); self.suggestion_buttons.append(button)
+            x+=button_w+gap
+
     def showKeyboard_(self, target):
         self.keyboard_target=target; self.keyboard_text=""
         screen=AppKit.NSScreen.mainScreen().frame(); width=screen.size.width
-        height=min(590,screen.size.height*.58)
+        height=min(690,screen.size.height*.72)
         self.keyboard_window=AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             ((0,0),(width,height)),AppKit.NSWindowStyleMaskBorderless,
             AppKit.NSBackingStoreBuffered,False)
@@ -341,6 +401,7 @@ class NativeController(NSObject):
         glass.setBlendingMode_(AppKit.NSVisualEffectBlendingModeBehindWindow)
         glass.setState_(AppKit.NSVisualEffectStateActive)
         self.keyboard_window.setContentView_(glass)
+        self.keyboard_glass=glass
         title=AppKit.NSTextField.labelWithString_(
             f"POINT + BLINK TO TYPE INTO {target['app']}")
         title.setFrame_(((28,height-44),(width-56,28)))
@@ -354,20 +415,26 @@ class NativeController(NSObject):
         self.keyboard_display.setTextColor_(AppKit.NSColor.colorWithWhite_alpha_(.08,1))
         glass.addSubview_(self.keyboard_display)
         rows=("QWERTYUIOP","ASDFGHJKL","ZXCVBNM")
-        y=height-190
+        self.key_centers={}
+        y=height-280
         for row in rows:
             gap=10; key_h=72; key_w=min(112,(width-56-gap*(len(row)-1))/len(row))
             total=key_w*len(row)+gap*(len(row)-1); x=(width-total)/2
             for letter in row:
                 glass.addSubview_(self.makeKey_(letter,letter.lower(),((x,y),(key_w,key_h))))
+                self.key_centers[letter.lower()]=(x+key_w/2,y+key_h/2)
                 x+=key_w+gap
             y-=key_h+12
+        self.swipe_decoder.set_layout(self.key_centers,key_w)
         actions=(("⌫ DELETE","DELETE",1.0),("SPACE","SPACE",2.0),
                  ("CANCEL","CANCEL",1.0),("TYPE INTO APP ↗","INSERT",1.7))
         gap=10; unit=(width-56-gap*(len(actions)-1))/sum(a[2] for a in actions); x=28
         for label,value,span in actions:
             button=self.makeKey_(label,value,((x,24),(unit*span,70)),value=="INSERT")
             glass.addSubview_(button); x+=unit*span+gap
+        self.swipe_trace_view=SwipeTraceView.alloc().initWithController_frame_(
+            self,((0,0),(width,height)))
+        glass.addSubview_(self.swipe_trace_view)
         self.keyboard_window.makeKeyAndOrderFront_(None); AppKit.NSApp.activateIgnoringOtherApps_(True)
 
     def makeKey_(self, title, value, frame, accent=False):
@@ -389,6 +456,11 @@ class NativeController(NSObject):
             self.keyboard_window.orderOut_(None)
             if text and target: insert_text(int(target["pid"]),text)
             return
+        elif value.startswith("SUGGEST:"):
+            word=value.split(":",1)[1]; parts=self.keyboard_text.rstrip().split()
+            if parts: parts[-1]=word
+            self.keyboard_text=" ".join(parts)+(" " if parts else "")
+            self.showSuggestions_([])
         else: self.keyboard_text+=value
         self.keyboard_display.setStringValue_(self.keyboard_text)
 

@@ -61,7 +61,10 @@ It runs from the macOS menu bar—no browser is involved. Move the pointer with 
 normal mouse or trackpad, then blink to click at its current position. Clicking
 an editable field opens the large on-screen keyboard. Its oversized keys are
 selected with pointer movement plus blink-clicks; physical typing is not
-required. A click-through cyan crosshair shows the exact aim point in every app
+required. In the keyboard, double blink to start a swipe, trace through a word,
+then double blink again to decode it; alternate words appear as large selectable
+suggestions. This ports the SHARK2-style decoder and frequency model from the
+`swipe-keyboard` branch of `maloocas/Gaize`. A click-through cyan crosshair shows the exact aim point in every app
 and flashes yellow when a blink click fires. Double blink to press-and-hold for
 dragging (the crosshair turns purple); double blink again to release. Press Escape once or choose
 **Quit OpenGaze** from the menu-bar item to stop at any time.
