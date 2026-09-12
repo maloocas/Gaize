@@ -29,7 +29,7 @@ final class Output: NSObject, AVSpeechSynthesizerDelegate {
         isSpeaking = true
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        utterance.voice = AVSpeechSynthesisVoice(language: AppSettings.shared.language.rawValue)
+        utterance.voice = Self.bestVoice(for: AppSettings.shared.language)
         synthesizer.speak(utterance)
     }
 
@@ -39,5 +39,28 @@ final class Output: NSObject, AVSpeechSynthesizerDelegate {
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         isSpeaking = false
+    }
+
+    /// The default AVSpeechSynthesisVoice(language:) picks the robotic
+    /// "compact" voice. Prefer an installed Premium, then Enhanced voice
+    /// for the language - these are the natural-sounding Siri-quality
+    /// voices, downloaded via System Settings > Accessibility > Spoken
+    /// Content > System Voice (or Voices...). Falls back to the default
+    /// compact voice if neither is installed.
+    private static var cachedVoices: [AppLanguage: AVSpeechSynthesisVoice] = [:]
+
+    private static func bestVoice(for language: AppLanguage) -> AVSpeechSynthesisVoice? {
+        if let cached = cachedVoices[language] { return cached }
+
+        let matching = AVSpeechSynthesisVoice.speechVoices().filter { $0.language == language.rawValue }
+        let chosen = matching.first(where: { $0.quality == .premium })
+            ?? matching.first(where: { $0.quality == .enhanced })
+            ?? AVSpeechSynthesisVoice(language: language.rawValue)
+
+        if let chosen {
+            print("Output: using voice \"\(chosen.name)\" (\(chosen.quality.rawValue)) for \(language.rawValue)")
+            cachedVoices[language] = chosen
+        }
+        return chosen
     }
 }
