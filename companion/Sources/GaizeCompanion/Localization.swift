@@ -109,9 +109,12 @@ enum AppLanguage: String, CaseIterable {
 
     var confirmationTemplate: (String) -> String {
         switch self {
-        case .english: return { "Selecting \($0)." }
-        case .spanish: return { "Seleccionando \($0)." }
-        case .french: return { "Sélection de \($0)." }
+        // Deliberately free of the select keywords ("select", "seleccionar",
+        // ...) - the mic hears this through the speakers, and "Selecting X"
+        // contained "select", which is what forced muting select mid-speech.
+        case .english: return { "Got it, \($0)." }
+        case .spanish: return { "Listo, \($0)." }
+        case .french: return { "D'accord, \($0)." }
         }
     }
 }

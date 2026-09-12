@@ -2,30 +2,29 @@ import Speech
 import AVFoundation
 
 /// Always-listening keyword spotting so the whole interaction can stay
-/// hands-free: say "select" / "click" to confirm the currently gazed-at
-/// element immediately (instead of waiting out the dwell timer), or
-/// "explain" / "what is this" to replay its explanation. Keywords and the
-/// recognizer's locale follow AppSettings.shared.language - call
-/// restartForLanguageChange() after changing it.
+/// hands-free: "select" clicks wherever the user is looking, "explain" /
+/// "what is this" describes it, plus website navigation and dictation.
+/// Keywords and the recognizer's locale follow AppSettings.shared.language -
+/// call restartForLanguageChange() after changing it.
 ///
-/// Needs Microphone + Speech Recognition permission (NSMicrophoneUsageDescription
-/// / NSSpeechRecognitionUsageDescription in Info.plist once this is packaged
-/// as a signed .app — see beaverlab's packaging/ for the pattern).
+/// Needs Microphone + Speech Recognition permission (Info.plist usage
+/// strings, and launching from the signed Gaize.app bundle).
 final class VoiceCommands {
     var onSelectCommand: (() -> Void)?
     var onExplainCommand: (() -> Void)?
     var onOpenWebsiteCommand: (() -> Void)?
     /// Fired with "home" / "back" / "learn" / "quiz" / "scenario" - direct
-    /// voice navigation of the website's own buttons, sent to it as a
-    /// bridge message rather than routed through gaze/AX at all.
+    /// voice navigation of the website's own buttons.
     var onWebsiteAction: ((String) -> Void)?
-    /// Checked before acting on any recognized command - lets the caller
-    /// mute us while Output is speaking, to avoid hearing our own TTS.
+    /// True while Output is speaking - most commands are ignored then, so
+    /// the mic doesn't act on our own TTS coming back through the speakers.
     var isMuted: (() -> Bool)?
-    /// Checked last, after every known command keyword fails to match -
-    /// when true, the next unmatched phrase is treated as dictation (e.g.
-    /// a contact's name for the To: field) via onDictate instead of being
-    /// silently ignored.
+    /// What Output is saying (or just said) - lets "select" and dictation
+    /// still work mid-speech, by only ignoring words that are our own
+    /// speech echoing back rather than everything.
+    var spokenTextNow: (() -> String?)?
+    /// When true, the next full utterance that isn't a command is typed
+    /// into the armed text field via onDictate.
     var isDictationModeActive: (() -> Bool)?
     var onDictate: ((String) -> Void)?
 
@@ -33,15 +32,23 @@ final class VoiceCommands {
     private let audioEngine = AVAudioEngine()
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
-    private var lastHandledSegmentCount = 0
     private var isAuthorized = false
 
-    /// On-device speech recognition finalizes a result (and this app then
-    /// restarts the recognizer) after almost any short pause - often after
-    /// a single word - so a multi-word phrase like "open website" can land
-    /// as two separate, isolated results. Keeping a short rolling window of
-    /// recently heard text (instead of only ever looking at one result at a
-    /// time) lets phrase matching span those restarts.
+    /// Words of the current recognition session as last seen. Partial
+    /// results revise earlier words ("sell" -> "select"), they don't only
+    /// append - diffing against this catches revisions. The old "only look
+    /// at segments past the last count" logic silently dropped them.
+    private var lastSegments: [String] = []
+    /// Segment indices in this session that already fired a select, so a
+    /// later revision of the same word ("select" -> "selected") can't click
+    /// twice.
+    private var firedSelectIndices: Set<Int> = []
+    private var lastSelectAt = Date.distantPast
+    private var commandFiredThisSession = false
+
+    /// Recognition often finalizes after a single word, so a multi-word
+    /// phrase like "open website" can land as two isolated sessions - a
+    /// short rolling window of recent text lets phrases span them.
     private var recentTranscript: [(text: String, at: Date)] = []
     private let recentTranscriptWindow: TimeInterval = 4.0
 
@@ -67,8 +74,6 @@ final class VoiceCommands {
         task = nil
     }
 
-    /// Call after changing AppSettings.shared.language - swaps in a
-    /// recognizer for the new locale and restarts the listening loop.
     func restartForLanguageChange() {
         guard isAuthorized else { return }
         print("VoiceCommands: restarting for language \(AppSettings.shared.language.rawValue)")
@@ -76,10 +81,18 @@ final class VoiceCommands {
         startListening()
     }
 
+    private func restartSoon(after delay: TimeInterval = 0.1) {
+        stop()
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.startListening()
+        }
+    }
+
     private func startListening() {
         let language = AppSettings.shared.language
         guard let recognizer = SFSpeechRecognizer(locale: language.locale), recognizer.isAvailable else {
-            print("VoiceCommands: recognizer unavailable for \(language.rawValue)")
+            print("VoiceCommands: recognizer unavailable for \(language.rawValue), retrying")
+            restartSoon(after: 1.0)
             return
         }
         self.recognizer = recognizer
@@ -87,15 +100,14 @@ final class VoiceCommands {
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         self.request = request
-        lastHandledSegmentCount = 0
+        lastSegments = []
+        firedSelectIndices = []
+        commandFiredThisSession = false
 
         let inputNode = audioEngine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
-        // Defensive: installTap traps with a fatal error if a tap is
-        // already installed on this bus. removeTap is a safe no-op when
-        // none exists - guards against any path that could call
-        // startListening() twice in close succession (e.g. a recognition
-        // session's own restart racing a restartForLanguageChange call).
+        // installTap traps if a tap is already installed on this bus;
+        // removeTap is a safe no-op when there isn't one.
         inputNode.removeTap(onBus: 0)
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
             request.append(buffer)
@@ -105,35 +117,78 @@ final class VoiceCommands {
         do {
             try audioEngine.start()
         } catch {
-            print("VoiceCommands: failed to start audio engine: \(error)")
+            print("VoiceCommands: failed to start audio engine: \(error), retrying")
+            restartSoon(after: 1.0)
             return
         }
 
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            guard let self, let result else { return }
-            self.handle(result)
-
-            if error != nil || result.isFinal {
-                // Restart the recognition window so we keep listening
-                // continuously rather than stopping after one utterance.
-                self.stop()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    self.startListening()
-                }
+            guard let self else { return }
+            if let result {
+                self.handle(result)
+            }
+            // Must restart on an error even when there's no result - the
+            // recognizer ends a session with a result-less error after a
+            // stretch of silence (and at its ~1 minute session cap). The
+            // old `guard let result else { return }` skipped the restart in
+            // exactly that case, so listening silently died until relaunch.
+            if error != nil || result?.isFinal == true {
+                self.restartSoon()
             }
         }
     }
 
     private func handle(_ result: SFSpeechRecognitionResult) {
-        let segments = result.bestTranscription.segments
-        guard segments.count > lastHandledSegmentCount else { return }
+        let segments = result.bestTranscription.segments.map { $0.substring.lowercased() }
+        let language = AppSettings.shared.language
 
-        let newWords = segments[lastHandledSegmentCount...]
-            .map { $0.substring.lowercased() }
-            .joined(separator: " ")
-        lastHandledSegmentCount = segments.count
+        var firstChanged = 0
+        while firstChanged < segments.count, firstChanged < lastSegments.count,
+              segments[firstChanged] == lastSegments[firstChanged] {
+            firstChanged += 1
+        }
+        lastSegments = segments
 
+        // Dictation takes the whole finished utterance, so a multi-word name
+        // or message isn't cut off at its first word.
+        if result.isFinal, isDictationModeActive?() == true, !commandFiredThisSession {
+            let full = segments.joined(separator: " ")
+            let isCommand = language.selectKeywords.contains(where: full.contains)
+            if !full.isEmpty, !isCommand, !isEcho(full) {
+                print("VoiceCommands: dictation \"\(full)\"")
+                recentTranscript.removeAll()
+                onDictate?(full)
+                return
+            }
+        }
+
+        guard firstChanged < segments.count else { return }
+        let changedIndices = Array(firstChanged..<segments.count)
+        let newWords = changedIndices.map { segments[$0] }.joined(separator: " ")
         print("VoiceCommands: heard \"\(newWords)\"")
+
+        // "select" is a click and is honored even while Output is speaking -
+        // a select said during a several-second confirmation used to be
+        // dropped outright. Only our own speech echoing back is ignored.
+        if let index = changedIndices.first(where: { i in
+            language.selectKeywords.contains(where: segments[i].contains)
+        }) {
+            if isEcho(newWords) {
+                print("VoiceCommands: ignoring \"\(newWords)\" - echo of our own speech")
+            } else if firedSelectIndices.contains(index) {
+                // Same word revised by a later partial result - already clicked.
+            } else if Date().timeIntervalSince(lastSelectAt) < 0.6 {
+                print("VoiceCommands: ignoring duplicate select within 0.6s")
+            } else {
+                firedSelectIndices.insert(index)
+                lastSelectAt = Date()
+                commandFiredThisSession = true
+                recentTranscript.removeAll()
+                print("VoiceCommands: SELECT")
+                onSelectCommand?()
+            }
+            return
+        }
 
         if isMuted?() == true {
             print("VoiceCommands: muted (Output is speaking), ignoring \"\(newWords)\"")
@@ -145,34 +200,35 @@ final class VoiceCommands {
         recentTranscript.removeAll { now.timeIntervalSince($0.at) > recentTranscriptWindow }
         let recentText = recentTranscript.map(\.text).joined(separator: " ")
 
-        let language = AppSettings.shared.language
+        let fire: (() -> Void) -> Void = { action in
+            self.recentTranscript.removeAll()
+            self.commandFiredThisSession = true
+            action()
+        }
 
         if language.openWebsiteKeywords.contains(where: recentText.contains) {
-            recentTranscript.removeAll()
-            onOpenWebsiteCommand?()
+            fire { onOpenWebsiteCommand?() }
         } else if language.homeKeywords.contains(where: recentText.contains) {
-            recentTranscript.removeAll()
-            onWebsiteAction?("home")
+            fire { onWebsiteAction?("home") }
         } else if language.backToGoalsKeywords.contains(where: recentText.contains) {
-            recentTranscript.removeAll()
-            onWebsiteAction?("back")
+            fire { onWebsiteAction?("back") }
         } else if language.takeQuizKeywords.contains(where: recentText.contains) {
-            recentTranscript.removeAll()
-            onWebsiteAction?("quiz")
+            fire { onWebsiteAction?("quiz") }
         } else if language.tryScenarioKeywords.contains(where: recentText.contains) {
-            recentTranscript.removeAll()
-            onWebsiteAction?("scenario")
+            fire { onWebsiteAction?("scenario") }
         } else if language.learnKeywords.contains(where: recentText.contains) {
-            recentTranscript.removeAll()
-            onWebsiteAction?("learn")
-        } else if language.selectKeywords.contains(where: newWords.contains) {
-            onSelectCommand?()
+            fire { onWebsiteAction?("learn") }
         } else if language.explainKeywords.contains(where: recentText.contains) {
-            recentTranscript.removeAll()
-            onExplainCommand?()
-        } else if isDictationModeActive?() == true {
-            recentTranscript.removeAll()
-            onDictate?(newWords)
+            fire { onExplainCommand?() }
         }
+    }
+
+    /// True if every heard word appears in what Output is saying (or just
+    /// said) - i.e. the mic is hearing our own TTS, not the user.
+    private func isEcho(_ heard: String) -> Bool {
+        guard let spoken = spokenTextNow?()?.lowercased() else { return false }
+        let words = heard.split(separator: " ")
+        guard !words.isEmpty else { return false }
+        return words.allSatisfy { spoken.contains($0) }
     }
 }

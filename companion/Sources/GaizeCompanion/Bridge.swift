@@ -96,6 +96,12 @@ final class Bridge {
             DispatchQueue.main.async { [weak self] in
                 self?.onDebugDictate?(text)
             }
+        case "page_state":
+            // Which screen the website is on - logged for observability.
+            print("Bridge: page_state mode=\(json["mode"] ?? "?") goal=\(json["goal"] ?? "none")")
+            for button in (json["buttons"] as? [[String: Any]]) ?? [] {
+                print("Bridge: button \"\(button["t"] ?? "")\" at \(button["x"] ?? 0) \(button["y"] ?? 0)")
+            }
         default:
             break
         }

@@ -36,7 +36,12 @@ final class Sensing {
 
     /// Called on every gaze-tracker frame with the current screen-space gaze
     /// point, top-left origin (Quartz/AX coordinates, not Cocoa).
+    /// The last point the gaze tracker reported - "select" clicks exactly here.
+    private var lastGazePoint: CGPoint?
+
     func updateGaze(at point: CGPoint) {
+        lastGazePoint = point
+
         if Date().timeIntervalSince(lastHeartbeat) > 1.0 {
             lastHeartbeat = Date()
             print("Sensing: heartbeat, gaze point = \(point)")
@@ -47,19 +52,10 @@ final class Sensing {
             return
         }
 
-        var axElementRef: AXUIElement?
-        let result = AXUIElementCopyElementAtPosition(
-            systemWide,
-            Float(point.x),
-            Float(point.y),
-            &axElementRef
-        )
-
-        guard result == .success, let axElement = axElementRef, let sensed = describe(axElement) else {
-            resetCurrent()
-            recentHits.removeAll()
-            return
-        }
+        // A single failed hit-test (gaze crossing a gap between elements)
+        // used to wipe the whole recent-history window, leaving select with
+        // nothing to act on - now it just skips that frame.
+        guard let (axElement, sensed) = hitTest(at: point) else { return }
 
         recentHits.append((axElement, sensed))
         if recentHits.count > recentHitsCapacity {
@@ -95,61 +91,62 @@ final class Sensing {
         return counts.values.max(by: { $0.count < $1.count }).map { ($0.element, $0.sensed) }
     }
 
-    /// Browsers report AXUIElementPerformAction(.press) as .success on a
-    /// plain <button> without necessarily routing it to the JS click
-    /// handler - the AX action path is proven reliable for native apps
-    /// (Messages), so only browser-owned elements get a real synthesized
-    /// click instead.
-    private static let browserBundleIDs: Set<String> = [
-        "com.google.Chrome", "com.apple.Safari", "org.mozilla.firefox",
-        "com.microsoft.edgemac", "com.brave.Browser",
-    ]
+    private func hitTest(at point: CGPoint) -> (element: AXUIElement, sensed: SensedElement)? {
+        var ref: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(systemWide, Float(point.x), Float(point.y), &ref) == .success,
+              let element = ref, let sensed = describe(element) else { return nil }
+        return (element, sensed)
+    }
 
-    /// Fired by a "select"/"click"/"choose"/"confirm" voice command.
+    /// "select" is a click: a real mouse click at the gaze point, every
+    /// time. It used to AXPress the tracked element instead, which silently
+    /// does nothing on anything that isn't a button (a conversation row, a
+    /// text label), and it did nothing at all whenever the recent gaze
+    /// history happened to be empty - both made select feel random.
     @discardableResult
     func confirmCurrentElement() -> SensedElement? {
-        guard let (axElement, sensed) = mostFrequentRecentHit() ?? currentAXElement.flatMap({ el in currentSensed.map { (el, $0) } }) else {
+        guard let point = lastGazePoint else {
+            print("Sensing: select with no gaze point yet - nothing to click")
             return nil
         }
 
-        var pid: pid_t = 0
-        AXUIElementGetPid(axElement, &pid)
-        let ownerApp = NSRunningApplication(processIdentifier: pid)
-        let ownerBundleID = ownerApp?.bundleIdentifier ?? ""
-        print("Sensing: confirming \"\(sensed.title)\" owned by pid=\(pid) bundleID=\"\(ownerBundleID)\"")
+        // Only used to describe what got clicked (spoken confirmation,
+        // website step tracking) and to pick which app to bring forward -
+        // the click itself happens regardless.
+        let target = hitTest(at: point) ?? mostFrequentRecentHit()
+        let sensed = target?.sensed ?? SensedElement(role: "unknown", title: "", frame: .zero)
 
-        if Self.browserBundleIDs.contains(ownerBundleID) {
-            // A synthesized click posts to whatever window is actually
-            // topmost at that screen point - if the browser isn't the
-            // active app (e.g. the user's still focused on this terminal),
-            // the click silently lands on the wrong window instead of the
-            // intended button. Same root cause as Messages needing to be
-            // activated before an AX query - activate the owner first.
-            if let ownerApp, !ownerApp.isActive {
-                print("Sensing: activating \(ownerBundleID) before click (was backgrounded)")
-                ownerApp.activate(options: [])
-                Thread.sleep(forTimeInterval: 0.3)
+        // A click posts to whatever window is topmost at that point, and an
+        // inactive window often swallows the first click just to activate
+        // itself - bring the owning app forward first.
+        if let element = target?.element {
+            var pid: pid_t = 0
+            AXUIElementGetPid(element, &pid)
+            if let owner = NSRunningApplication(processIdentifier: pid),
+               !owner.isActive, pid != ProcessInfo.processInfo.processIdentifier {
+                print("Sensing: activating \(owner.bundleIdentifier ?? "?") before click")
+                owner.activate(options: [])
+                Thread.sleep(forTimeInterval: 0.25)
             }
-            print("Sensing: confirming \"\(sensed.title)\" via synthesized click (browser-owned)")
-            synthesizeClick(at: sensed.frame)
-        } else {
-            AXUIElementPerformAction(axElement, kAXPressAction as CFString)
         }
 
-        onConfirmed?(sensed, axElement)
-        resetCurrent()
+        print("Sensing: CLICK at \(point) on \"\(sensed.title)\" (\(sensed.role))")
+        synthesizeClick(at: point)
+        onConfirmed?(sensed, target?.element ?? systemWide)
+        recentHits.removeAll()
         return sensed
     }
 
-    /// Posts a real mouse-down/mouse-up at the element's center, in
-    /// AX/Quartz (top-left origin) coordinates.
-    private func synthesizeClick(at frame: CGRect) {
-        guard frame.width > 0, frame.height > 0 else { return }
-        let point = CGPoint(x: frame.midX, y: frame.midY)
-
-        let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left)
-        let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left)
+    /// Posts a real mouse-down/mouse-up at `point`, in AX/Quartz (top-left
+    /// origin) coordinates.
+    private func synthesizeClick(at point: CGPoint) {
+        let source = CGEventSource(stateID: .hidSystemState)
+        let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left)
+        let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left)
+        down?.setIntegerValueField(.mouseEventClickState, value: 1)
+        up?.setIntegerValueField(.mouseEventClickState, value: 1)
         down?.post(tap: .cghidEventTap)
+        usleep(30_000)
         up?.post(tap: .cghidEventTap)
     }
 
@@ -194,7 +191,14 @@ final class Sensing {
     /// Activates the target app if needed and returns its windows - shared
     /// by screenFrame and focusElement, both of which need to walk the same
     /// AX tree.
-    private func targetAppWindows() -> [AXUIElement]? {
+    private func reopen(_ app: NSRunningApplication) {
+        guard let url = app.bundleURL else { return }
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+        NSWorkspace.shared.openApplication(at: url, configuration: config)
+    }
+
+    private func targetAppWindows(attempt: Int = 0) -> [AXUIElement]? {
         guard AXIsProcessTrusted() else {
             print("Sensing: not trusted")
             return nil
@@ -236,7 +240,15 @@ final class Sensing {
         let windowsResult = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef)
 
         if windowsResult == .success, let list = windowsRef as? [AXUIElement] {
-            return list
+            if !list.isEmpty || attempt > 0 { return list }
+            // Messages keeps running with zero windows after its last one is
+            // closed - activating it then shows nothing, which is why "Learn
+            // this goal" sometimes didn't visibly take you to Messages. A
+            // reopen (same as clicking its Dock icon) makes it open a window.
+            print("Sensing: \(Self.targetAppName) has no windows - reopening")
+            reopen(targetApp)
+            Thread.sleep(forTimeInterval: 1.0)
+            return targetAppWindows(attempt: attempt + 1)
         }
 
         print("Sensing: kAXWindowsAttribute failed (axError=\(windowsResult.rawValue)), trying focused window")
@@ -305,13 +317,23 @@ final class Sensing {
         return SensedElement(role: role, title: title, frame: CGRect(origin: position, size: size))
     }
 
-    private func findElement(in element: AXUIElement, matching description: String, depth: Int) -> (element: AXUIElement, sensed: SensedElement)? {
+    private func findElement(in element: AXUIElement, matching description: String, depth: Int, exact: Bool? = nil) -> (element: AXUIElement, sensed: SensedElement)? {
+        guard let exact else {
+            // Prefer an exact title match anywhere in the tree over a partial
+            // one - Messages' attach "+" button is titled exactly "add", and
+            // a contains-match alone would hit "Add Contact" first.
+            return findElement(in: element, matching: description, depth: depth, exact: true)
+                ?? findElement(in: element, matching: description, depth: depth, exact: false)
+        }
         guard depth < 25 else { return nil }
 
+        let wanted = description.lowercased()
         if let sensed = describe(element), !sensed.title.isEmpty,
-           sensed.title.lowercased().contains(description.lowercased()),
            sensed.frame.width > 0, sensed.frame.height > 0 {
-            return (element, sensed)
+            let title = sensed.title.lowercased()
+            if exact ? title == wanted : title.contains(wanted) {
+                return (element, sensed)
+            }
         }
 
         var childrenRef: CFTypeRef?
@@ -321,7 +343,7 @@ final class Sensing {
         }
 
         for child in children {
-            if let found = findElement(in: child, matching: description, depth: depth + 1) {
+            if let found = findElement(in: child, matching: description, depth: depth + 1, exact: exact) {
                 return found
             }
         }
