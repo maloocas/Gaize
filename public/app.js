@@ -601,7 +601,7 @@ function setupBlink() {
     overlay: $("camOverlay"),
     placeholder: $("camPlaceholder"),
     onBlink: () => {
-      fire("blink");
+      if (!window.openGazeSystemArmed) fire("blink");
       $("switchBadge").textContent = "switch: BLINK";
       $("switchBadge").className = "badge badge-ok";
     },

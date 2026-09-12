@@ -33,14 +33,21 @@
   <section class="welcome-card">
     <div><span class="eyebrow">GOOD <span id="dayPart">AFTERNOON</span></span>
       <h2>Your computer, controlled your way.</h2>
-      <p>Look at a large target. Hold your gaze or blink to open it.</p></div>
+      <p>Look anywhere on your Mac to move the pointer. Blink to click.</p></div>
     <div class="control-health"><span class="live-dot"></span><strong id="trackingLabel">Mouse preview</strong><small id="bridgeLabel">Browser mode</small></div>
   </section>
+  <section class="system-control-card">
+    <div class="control-steps"><span><b>1</b> Start tracking</span><i></i><span><b>2</b> Look to move</span><i></i><span><b>3</b> Blink to click</span><i></i><span><b>4</b> Keyboard opens on text fields</span></div>
+    <div class="control-start-row">
+      <div><h3>System-wide eye control</h3><p id="systemControlStatus">Start the local bridge, then enable control. Keep this page open in the background.</p></div>
+      <div class="pairing"><input id="pairingCode" inputmode="numeric" maxlength="6" placeholder="6-digit code" aria-label="Bridge pairing code"><button id="startSystemControl" class="btn btn-primary btn-large">Start eye control</button></div>
+    </div>
+    <div class="safety-note"><strong>Safety:</strong> press <kbd>Escape</kbd> three times to stop computer control immediately.</div>
+  </section>
+  <p class="section-label">Communication tools</p>
   <section class="launcher-grid" aria-label="Computer shortcuts">
     <button class="launch-card gaze-target" data-action="keyboard"><span class="launch-icon blue">⌨</span><strong>Keyboard</strong><small>Type anywhere</small></button>
     <button class="launch-card gaze-target" data-action="communicate"><span class="launch-icon violet">◉</span><strong>Communicate</strong><small>Build and speak</small></button>
-    <button class="launch-card gaze-target" data-action="browser"><span class="launch-icon cyan">◎</span><strong>Web</strong><small>Open a website</small></button>
-    <button class="launch-card gaze-target" data-action="messages"><span class="launch-icon green">●</span><strong>Messages</strong><small>Write a message</small></button>
     <button class="launch-card gaze-target" data-action="sign"><span class="launch-icon orange">🤟</span><strong>ASL board</strong><small>Quick visual phrases</small></button>
     <button class="launch-card gaze-target" data-action="settings"><span class="launch-icon gray">⚙</span><strong>Setup</strong><small>Calibrate controls</small></button>
   </section>
