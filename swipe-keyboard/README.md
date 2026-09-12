@@ -6,10 +6,14 @@ A swipe-to-type keyboard, like the one on iOS, built to take gaze input later. F
 
 ```bash
 cd swipe-keyboard
-python3 -m http.server 8000
+OPENAI_API_KEY=sk-... python3 server.py
 ```
 
-Open http://localhost:8000 and trace words with the trackpad or mouse. **Tap Space** once to start, then tap it at the end of each word. A tap stands in for a blink. Each tap ends the current word and starts the next one right away. Backspace deletes the last word.
+Open http://localhost:8000 and trace words with the trackpad or mouse. **Tap Space** once to start, then tap it at the end of each word. A tap stands in for a blink. Each tap ends the current word and starts the next one right away. Backspace deletes the last word. **Enter** ends the sentence and sends it to the LLM, and the decoded text appears at the top of the page.
+
+## LLM decoding
+
+`llm.js` has no DOM code, so it ports directly to a native app. When a sentence ends, `decodeSentence(kb.getSlots(), { priorText })` sends every word slot to `gpt-5.6-luna` with reasoning effort `none` through the Responses API. For each slot it sends the top 8 candidates in rank order, with no scores, plus the keys the path passed near after 275 ms (for example `path: g h e l o`). The model picks one word per slot. It can use a word that isn't listed when the listed words don't fit and the path supports the new one. `server.py` serves the page and forwards `POST /llm` to OpenAI, so the API key never reaches the browser.
 
 A tap calls `kb.boundary()`. Each word is then decoded from several start delays set by the `offsets` option (default 150, 200, 275, 350 and 450 ms, which match p5/p25/p50/p75/p90 of 47 gaps measured on a trackpad), keeping the top `perOffset` candidates from each. The results are merged into one list sorted by score. Use the gap measurements to pick better offsets. **Backspace** deletes the last word. Click a suggestion to replace the last word.
 

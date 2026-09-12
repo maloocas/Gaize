@@ -16,6 +16,7 @@ export function createSwipeKeyboard(root, {
   // ms after the boundary: ≈ p5/p25/p50/p75/p90 of measured inter-word gaps (n=47, trackpad)
   offsets = [150, 200, 275, 350, 450],
   perOffset = 3,
+  traceOffset = 275, // start of the key trace sent to the LLM (median gap)
   temperature = 0.5,
   onWord,
 }) {
@@ -34,12 +35,14 @@ export function createSwipeKeyboard(root, {
   const ctx = canvas.getContext('2d');
 
   let lattice = []; // one candidate list per word slot
+  let traces = []; // per slot: keys the path passed near, e.g. 'h e l o'
+  let centers = {};
   let path = null;
   let t0 = 0;
   let last = null;
 
   function layout() {
-    const centers = {};
+    centers = {};
     let w = 0;
     for (const el of root.querySelectorAll('[data-key]')) {
       const r = el.getBoundingClientRect();
@@ -76,6 +79,21 @@ export function createSwipeKeyboard(root, {
     return decoder.decode(sub, { radius: accuracy, limit: perOffset }).map((r) => ({ ...r, offset }));
   }
 
+  // Nearest key of each sample after traceOffset, with repeats collapsed.
+  function trace() {
+    const keys = [];
+    for (const p of path) {
+      if (p.t < t0 + traceOffset) continue;
+      let best = null, bd = Infinity;
+      for (const [c, k] of Object.entries(centers)) {
+        const d = Math.hypot(k.x - p.x, k.y - p.y);
+        if (d < bd) { bd = d; best = c; }
+      }
+      if (best !== keys[keys.length - 1]) keys.push(best);
+    }
+    return keys.join(' ');
+  }
+
   // Merges all offsets' candidates, keeping each word's best (lowest-cost) offset,
   // then sorts globally and turns costs into probabilities.
   function merge(results) {
@@ -103,11 +121,12 @@ export function createSwipeKeyboard(root, {
     // sorted globally. Candidates are [{word, p, offset}], p sums to 1, offset = best start.
     end() {
       const candidates = path?.length ? merge(offsets.flatMap(decodeFrom)) : [];
-      path = null;
       if (candidates.length) {
         lattice.push(candidates);
+        traces.push(trace());
         onWord?.(candidates, lattice);
       }
+      path = null;
       render();
     },
     // Single word-break input (a blink later): ends the current word and starts the next.
@@ -117,8 +136,18 @@ export function createSwipeKeyboard(root, {
     },
     deleteWord() {
       lattice.pop();
+      traces.pop();
       render();
     },
     getLattice: () => lattice,
+    // [{candidates, trace}] per word slot, the input for llm.js
+    getSlots: () => lattice.map((candidates, i) => ({ candidates, trace: traces[i] })),
+    // Stops recording and clears the lattice (after a sentence is committed).
+    clear() {
+      path = null;
+      lattice = [];
+      traces = [];
+      render();
+    },
   };
 }

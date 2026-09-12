@@ -33,4 +33,14 @@
   text-transform: uppercase;
   background: #1a1d26;
 }
+.swipe-text {
+  position: fixed;
+  top: 2vh;
+  left: 3vw;
+  right: 3vw;
+  z-index: 1;
+  color: #e8ecf4;
+  font: 600 3.4vh system-ui, sans-serif;
+}
+.swipe-kb .swipe-output { margin-top: 7vh; }
 .swipe-trace { position: fixed; inset: 0; pointer-events: none; }

@@ -11,8 +11,13 @@
     <script type="module">
       import { loadWords } from './decoder.js';
       import { createSwipeKeyboard } from './keyboard.js';
+      import { decodeSentence } from './llm.js';
 
       const { words, freqs } = await loadWords('./words.txt');
+      const textEl = document.createElement('div');
+      textEl.className = 'swipe-text';
+      document.body.prepend(textEl);
+      let text = '';
       const kb = createSwipeKeyboard(document.getElementById('kb'), {
         words,
         freqs,
@@ -29,7 +34,24 @@
         if (e.repeat) return;
         if (e.code === 'Space') kb.boundary();
         if (e.code === 'Backspace') kb.deleteWord();
+        if (e.code === 'Enter') finishSentence();
       });
+
+      // Enter ends the sentence: the last word is closed, and the whole lattice goes to the LLM.
+      async function finishSentence() {
+        kb.end();
+        const slots = kb.getSlots();
+        kb.clear();
+        if (!slots.length) return;
+        textEl.textContent = `${text} …`;
+        try {
+          const sentence = await decodeSentence(slots, { priorText: text });
+          text = `${text} ${sentence}`.trim();
+          textEl.textContent = text;
+        } catch (err) {
+          textEl.textContent = `${text} [LLM error: ${err.message}]`;
+        }
+      }
     </script>
   </body>
 </html>
