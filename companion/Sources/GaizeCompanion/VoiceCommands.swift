@@ -41,6 +41,7 @@ final class VoiceCommands {
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private var isAuthorized = false
+    private var restartPending = false
 
     /// Words of the current recognition session as last seen. Partial
     /// results revise earlier words ("sell" -> "select"), they don't only
@@ -100,8 +101,14 @@ final class VoiceCommands {
     }
 
     private func restartSoon(after delay: TimeInterval = 0.1) {
+        // Coalesce - a send/dictation restart and the recognizer's own
+        // final/error restart can land together, and two scheduled starts
+        // would leave two recognition tasks running.
+        guard !restartPending else { return }
+        restartPending = true
         stop()
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.restartPending = false
             self?.startListening()
         }
     }
@@ -148,7 +155,9 @@ final class VoiceCommands {
         }
 
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            guard let self else { return }
+            // Ignore callbacks from a session we already stopped (its
+            // cancellation error would otherwise trigger another restart).
+            guard let self, self.request === request else { return }
             if let result {
                 self.handle(result)
             }
@@ -181,7 +190,8 @@ final class VoiceCommands {
             i < segmentArrivals.count ? segmentArrivals[i] : arrivedAt
         }
         checkForSend(segments, isFinal: result.isFinal)
-        // Words after a send (background noise) mustn't be dictated or acted on.
+        // A send restarts the session (see checkForSend); ignore any result
+        // still in flight from the old one.
         if sendFiredThisSession { return }
 
         // Dictation fires on a pause, not only on the recognizer's final
@@ -278,7 +288,22 @@ final class VoiceCommands {
         }
         let phrase = segments[start...].joined(separator: " ")
             .trimmingCharacters(in: .punctuationCharacters.union(.whitespaces))
-        guard AppSettings.shared.language.sendKeywords.contains(phrase), !isEcho(phrase) else { return }
+        guard !isEcho(phrase) else { return }
+        let language = AppSettings.shared.language
+        let action: () -> Void
+        if language.sendKeywords.contains(phrase) {
+            action = { [weak self] in
+                print("VoiceCommands: SEND")
+                self?.onSendCommand?()
+            }
+        } else if isOpenWebsitePhrase(phrase, language), isDictationModeActive?() != true {
+            action = { [weak self] in
+                print("VoiceCommands: OPEN WEBSITE (standalone \"\(phrase)\")")
+                self?.onOpenWebsiteCommand?()
+            }
+        } else {
+            return
+        }
 
         let wordCount = segments.count
         let fire = { [weak self] in
@@ -286,8 +311,11 @@ final class VoiceCommands {
             self.sendFiredThisSession = true
             self.commandFiredThisSession = true
             self.recentTranscript.removeAll()
-            print("VoiceCommands: SEND")
-            self.onSendCommand?()
+            action()
+            // Start a fresh session - ignoring the rest of this one left
+            // listening deaf: with room noise it never finalized, so it never
+            // restarted (observed: "gaize open" unheard after a send).
+            self.restartSoon()
         }
         if isFinal {
             fire()
@@ -300,6 +328,15 @@ final class VoiceCommands {
         }
         pendingSend = work
         DispatchQueue.main.asyncAfter(deadline: .now() + sendSilence, execute: work)
+    }
+
+    /// An exact standalone phrase, or a short phrase (up to 3 words) ending
+    /// in "open" - "Gaize" gets misheard as all sorts ("can i open" observed).
+    private func isOpenWebsitePhrase(_ phrase: String, _ language: AppLanguage) -> Bool {
+        if language.openWebsitePhrases.contains(phrase) { return true }
+        let words = phrase.split(separator: " ").map(String.init)
+        guard let last = words.last, words.count <= 3 else { return false }
+        return language.openWebsitePhrases.contains(last)
     }
 
     /// What to type for the words heard since the last dictation, or nil.
@@ -357,6 +394,9 @@ final class VoiceCommands {
         recentTranscript.removeAll()
         print("VoiceCommands: dictation \"\(text)\"")
         onDictate?(text)
+        // Fresh session per dictation, so segment indices and the earlier
+        // words don't linger in a session noise may keep open indefinitely.
+        restartSoon()
     }
 
     /// True if every heard word appears in what Output is saying (or just

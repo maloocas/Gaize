@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// implicit recipient dictation, so speech after the name goes to the
     /// message body rather than adding more recipients.
     private var filledRecipientField: AXUIElement?
+    private var lastWebsiteOpenAt = Date.distantPast
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         requestAccessibilityPermission()
@@ -101,8 +102,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         voiceCommands.onOpenWebsiteCommand = { [weak self] in
+            // The phrase path ("gaize open") and the standalone-"open" path
+            // can both catch one utterance - open once.
+            guard let self, Date().timeIntervalSince(self.lastWebsiteOpenAt) > 3 else { return }
+            self.lastWebsiteOpenAt = Date()
             print("AppDelegate: opening website at \(AppDelegate.websiteURL)")
-            self?.output.speak("Opening Gaize.")
+            self.output.speak("Opening Gaize.")
             // Explicitly activate the browser once it opens the page - a
             // plain NSWorkspace.open can leave it opened but backgrounded
             // (e.g. if a matching tab already existed), which isn't "go
