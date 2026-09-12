@@ -58,9 +58,24 @@ python3 native/bridge.py
 ```
 
 Grant Terminal Accessibility permission when macOS asks. The bridge binds only
-to `127.0.0.1` and accepts the local app and production demo origins. Without it,
+to `127.0.0.1` and accepts the local app and production demo origins. Enter the
+six-digit pairing code shown in the terminal when using the deployed site.
+Without it,
 all communication, keyboard, ASL-board, gaze, dwell, blink and speech features
 still work inside the browser.
+
+The intended system workflow is:
+
+1. Start and arm the local bridge, then enable camera tracking.
+2. Keep the OpenGaze page running; webcam gaze moves the real macOS pointer.
+3. A deliberate blink posts a real system click at the pointer location.
+4. After the click, the bridge reads the newly focused macOS accessibility
+   element. If it is editable, it automatically opens the large floating
+   keyboard—ordinary buttons and links do not open it.
+5. Selecting **Type into field** closes the keyboard, restores the original
+   application, and types into that field.
+
+Press `Escape` three times within two seconds to disarm computer control.
 
 ## Accessible computer controls
 
