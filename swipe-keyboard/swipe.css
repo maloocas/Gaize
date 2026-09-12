@@ -1,0 +1,66 @@
+.swipe-kb {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 2vh;
+  padding: 3vh 3vw;
+  background: #08090d;
+  color: #e8ecf4;
+  font: 600 2vh system-ui, sans-serif;
+  user-select: none;
+}
+.swipe-output {
+  flex: 1;
+  overflow: auto;
+  font-size: 2.2vh;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 2vh 2.5vw;
+}
+.swipe-slot { display: flex; flex-direction: column; gap: 0.3vh; }
+.swipe-slot span:first-child { font-size: 3.2vh; }
+.swipe-keys { display: flex; flex-direction: column; gap: 0.6vh; }
+.swipe-row { display: flex; gap: 0.5vw; justify-content: center; }
+.swipe-key {
+  width: 4.2vw;
+  height: 6vh;
+  display: grid;
+  place-items: center;
+  border-radius: 0.8vh;
+  text-transform: uppercase;
+  background: #1a1d26;
+}
+.swipe-exit {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6vh;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  background: #3a1d24;
+  color: #f0b6c0;
+  font: 600 1.8vh system-ui, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.swipe-text {
+  position: fixed;
+  top: 8vh;
+  left: 3vw;
+  right: 3vw;
+  z-index: 1;
+  max-height: 30vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: #e8ecf4;
+  font: 500 1.6vh ui-monospace, monospace;
+  background: #08090d;
+}
+.swipe-text > div { padding: 1vh 0; border-bottom: 1px solid #1a1d26; }
+.swipe-kb .swipe-output { margin-top: 36vh; }
+.swipe-trace { position: fixed; inset: 0; pointer-events: none; }

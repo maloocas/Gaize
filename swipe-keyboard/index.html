@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gaze Swipe Keyboard</title>
+    <link rel="stylesheet" href="./swipe.css" />
+  </head>
+  <body>
+    <div id="kb"></div>
+    <script type="module">
+      import { loadWords } from './decoder.js';
+      import { createSwipeKeyboard } from './keyboard.js';
+      import { buildPrompt, decodeSentence } from './llm.js';
+
+      const { words, freqs } = await loadWords('./words.txt');
+      const exitEl = document.createElement('div');
+      exitEl.className = 'swipe-exit';
+      exitEl.textContent = 'move here to finish';
+      document.body.prepend(exitEl);
+      const textEl = document.createElement('div');
+      textEl.className = 'swipe-text';
+      document.body.prepend(textEl);
+      let text = '';
+      const kb = createSwipeKeyboard(document.getElementById('kb'), {
+        words,
+        freqs,
+        onWord: (candidates) => console.log('word candidates', candidates),
+      });
+      window.swipeKeyboard = kb;
+
+      // Trackpad/mouse stands in for gaze, a Space tap stands in for a blink: each tap ends
+      // the current word and starts the next, decoded from the calibrated start offsets.
+      // Backspace deletes a word.
+      // Moving into the exit strip at the top ends typing, same as Enter. Tap Space to start again.
+      addEventListener('mousemove', (e) => {
+        if (e.clientY < exitEl.getBoundingClientRect().bottom) {
+          if (kb.isRecording()) finishSentence();
+          return;
+        }
+        kb.feed(e.clientX, e.clientY);
+      });
+      addEventListener('keydown', (e) => {
+        if (e.code === 'Space') e.preventDefault();
+        if (e.repeat) return;
+        if (e.code === 'Space') kb.boundary();
+        if (e.code === 'Backspace') kb.deleteWord();
+        if (e.code === 'Enter') finishSentence();
+      });
+
+      // Enter ends the sentence: the last word is closed, and the whole lattice goes to the LLM.
+      async function finishSentence() {
+        kb.end();
+        const slots = kb.getSlots();
+        kb.clear();
+        if (!slots.length) return;
+        // Log what was sent (top 5 per slot, as in llm.js) and append the model's output below it.
+        const entry = document.createElement('div');
+        entry.textContent = `IN:\n${buildPrompt(slots.map((s) => ({ ...s, candidates: s.candidates.slice(0, 5) })), text)}\nOUT: …`;
+        textEl.append(entry);
+        textEl.scrollTop = textEl.scrollHeight;
+        const prior = text;
+        try {
+          const sentence = await decodeSentence(slots, { priorText: prior });
+          text = `${text} ${sentence}`.trim();
+          entry.textContent = entry.textContent.replace(/OUT: …$/, `OUT: ${sentence}`);
+        } catch (err) {
+          entry.textContent = entry.textContent.replace(/OUT: …$/, `OUT: [LLM error: ${err.message}]`);
+        }
+        textEl.scrollTop = textEl.scrollHeight;
+      }
+    </script>
+  </body>
+</html>
