@@ -4,7 +4,9 @@ import AVFoundation
 /// Always-listening keyword spotting so the whole interaction can stay
 /// hands-free: say "select" / "click" to confirm the currently gazed-at
 /// element immediately (instead of waiting out the dwell timer), or
-/// "explain" / "what is this" to replay its explanation.
+/// "explain" / "what is this" to replay its explanation. Keywords and the
+/// recognizer's locale follow AppSettings.shared.language - call
+/// restartForLanguageChange() after changing it.
 ///
 /// Needs Microphone + Speech Recognition permission (NSMicrophoneUsageDescription
 /// / NSSpeechRecognitionUsageDescription in Info.plist once this is packaged
@@ -17,15 +19,12 @@ final class VoiceCommands {
     /// mute us while Output is speaking, to avoid hearing our own TTS.
     var isMuted: (() -> Bool)?
 
-    private let selectKeywords = ["select", "click", "choose", "confirm"]
-    private let explainKeywords = ["explain", "what is this", "what's this"]
-    private let openWebsiteKeywords = ["open website", "open the website", "show website", "open goals", "show goals"]
-
-    private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    private var recognizer: SFSpeechRecognizer?
     private let audioEngine = AVAudioEngine()
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private var lastHandledSegmentCount = 0
+    private var isAuthorized = false
 
     func start() {
         SFSpeechRecognizer.requestAuthorization { [weak self] authStatus in
@@ -34,6 +33,7 @@ final class VoiceCommands {
                 return
             }
             DispatchQueue.main.async {
+                self?.isAuthorized = true
                 self?.startListening()
             }
         }
@@ -48,11 +48,22 @@ final class VoiceCommands {
         task = nil
     }
 
+    /// Call after changing AppSettings.shared.language - swaps in a
+    /// recognizer for the new locale and restarts the listening loop.
+    func restartForLanguageChange() {
+        guard isAuthorized else { return }
+        print("VoiceCommands: restarting for language \(AppSettings.shared.language.rawValue)")
+        stop()
+        startListening()
+    }
+
     private func startListening() {
-        guard let recognizer, recognizer.isAvailable else {
-            print("VoiceCommands: recognizer unavailable")
+        let language = AppSettings.shared.language
+        guard let recognizer = SFSpeechRecognizer(locale: language.locale), recognizer.isAvailable else {
+            print("VoiceCommands: recognizer unavailable for \(language.rawValue)")
             return
         }
+        self.recognizer = recognizer
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
@@ -102,11 +113,13 @@ final class VoiceCommands {
             return
         }
 
-        if openWebsiteKeywords.contains(where: newWords.contains) {
+        let language = AppSettings.shared.language
+
+        if language.openWebsiteKeywords.contains(where: newWords.contains) {
             onOpenWebsiteCommand?()
-        } else if selectKeywords.contains(where: newWords.contains) {
+        } else if language.selectKeywords.contains(where: newWords.contains) {
             onSelectCommand?()
-        } else if explainKeywords.contains(where: newWords.contains) {
+        } else if language.explainKeywords.contains(where: newWords.contains) {
             onExplainCommand?()
         }
     }

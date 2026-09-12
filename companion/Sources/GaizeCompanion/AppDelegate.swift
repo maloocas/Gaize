@@ -72,6 +72,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.output.isSpeaking ?? false
         }
 
+        bridge.onSetLanguage = { [weak self] languageCode in
+            guard let self, let language = AppLanguage(rawValue: languageCode) else {
+                print("AppDelegate: unknown language code \"\(languageCode)\"")
+                return
+            }
+            print("AppDelegate: switching language to \(language.rawValue)")
+            AppSettings.shared.language = language
+            self.voiceCommands.restartForLanguageChange()
+        }
+
         bridge.start()
         gazeTracker.start()
         voiceCommands.start()
