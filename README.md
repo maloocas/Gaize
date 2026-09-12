@@ -61,7 +61,8 @@ It opens a native calibration window and then runs in the background—no browse
 is involved. Follow all nine calibration dots; the measured left, center, right,
 top, and bottom eye positions are expanded to the full Mac screen. Look to move
 the pointer and blink to click in Notes or any other application. Clicking an
-editable field opens the large native keyboard. Press Escape three times to stop.
+editable field opens the large native keyboard. Press Escape once to quit at
+any time; calibration also has a visible red Exit button.
 
 On first launch, macOS may request Camera, Accessibility, and Input Monitoring
 permission for Terminal. Grant them in System Settings, then restart the command.
