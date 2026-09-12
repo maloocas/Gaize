@@ -15,6 +15,14 @@ VENV = ROOT / ".native-venv"
 PYTHON = VENV / "bin" / "python"
 PID_FILE = Path("/private/tmp/opengaze.pid")
 LOG_FILE = Path("/private/tmp/opengaze.log")
+STARTUP_TIMEOUT = 240
+LAUNCH_GRACE = 10
+
+
+def controller_running() -> bool:
+    """True while the controller process the launcher exec'd into is alive."""
+    return subprocess.run(["pgrep", "-f", "native/controller.py"],
+                          capture_output=True).returncode == 0
 
 
 def main() -> None:
@@ -43,7 +51,15 @@ def main() -> None:
         print("macOS could not launch OpenGaze.app. Startup log:",file=sys.stderr)
         if LOG_FILE.exists(): print(LOG_FILE.read_text(errors="replace")[-5000:],file=sys.stderr)
         raise SystemExit(1) from None
-    for _ in range(30):
+    # controller.py writes the PID file last, once mediapipe, OpenCV and the
+    # camera are all up; a cold run also builds the matplotlib font cache. That
+    # is comfortably over a minute, so waiting a fixed three seconds reported
+    # every healthy first launch as a failure. Wait on the process instead, and
+    # only give up once it is actually gone.
+    deadline = time.monotonic() + STARTUP_TIMEOUT
+    launched_by = time.monotonic() + LAUNCH_GRACE
+    said_waiting = False
+    while time.monotonic() < deadline:
         if PID_FILE.exists():
             try:
                 pid=int(PID_FILE.read_text().strip())
@@ -53,7 +69,15 @@ def main() -> None:
                 return
             except (ValueError,ProcessLookupError,PermissionError):
                 pass
-        time.sleep(.1)
+        # `open -n` returns immediately, so allow a grace period before a
+        # missing process counts as a launch that died rather than one that
+        # has not appeared yet.
+        if time.monotonic() > launched_by and not controller_running():
+            break
+        if not said_waiting and time.monotonic() > launched_by:
+            print("[OpenGaze] still starting — loading the gaze model…", flush=True)
+            said_waiting = True
+        time.sleep(.2)
     print("OpenGaze did not stay running. Startup log:",file=sys.stderr)
     if LOG_FILE.exists(): print(LOG_FILE.read_text(errors="replace")[-5000:],file=sys.stderr)
     raise SystemExit(1)
