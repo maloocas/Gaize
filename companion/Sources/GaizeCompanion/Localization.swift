@@ -177,9 +177,11 @@ enum AppLanguage: String, CaseIterable {
 
     var sleepAcknowledgement: String {
         switch self {
-        case .english: return "Okay, I'll stop listening. Say hey Gaize when you need me."
-        case .spanish: return "De acuerdo, dejo de escuchar. Di hola Gaize cuando me necesites."
-        case .french: return "D'accord, j'arrête d'écouter. Dites salut Gaize quand vous avez besoin de moi."
+        // Must not contain a wake phrase - the mic hears this through the
+        // speakers, and "say hey Gaize when you need me" woke it right back up.
+        case .english: return "Okay, I'll stop listening."
+        case .spanish: return "De acuerdo, dejo de escuchar."
+        case .french: return "D'accord, j'arrête d'écouter."
         }
     }
 
