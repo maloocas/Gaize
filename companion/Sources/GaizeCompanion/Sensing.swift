@@ -1,5 +1,4 @@
-import Foundation
-import CoreGraphics
+import AppKit
 import ApplicationServices
 
 struct SensedElement {
@@ -8,32 +7,135 @@ struct SensedElement {
     let frame: CGRect
 }
 
-/// AX hit-testing on the target app (Messages, to start) + dwell-time state
-/// machine: gaze settles on an element -> explain; settles again -> confirm.
+/// AX hit-testing on whatever's under the gaze point + dwell-time state
+/// machine: gaze settles on an element -> explain; settles again, longer -> confirm.
 final class Sensing {
     var onDwellExplain: ((SensedElement) -> Void)?
     var onDwellConfirm: ((SensedElement) -> Void)?
 
-    private var currentElement: SensedElement?
+    private let systemWide = AXUIElementCreateSystemWide()
+    private var currentKey: String?
     private var dwellStart: Date?
     private var hasExplainedCurrent = false
 
     private let explainDwellSeconds: TimeInterval = 0.4
-    private let confirmDwellSeconds: TimeInterval = 0.8
+    private let confirmDwellSeconds: TimeInterval = 1.2
 
-    /// Called on every gaze-tracker frame with the current screen-space gaze point.
+    /// Called on every gaze-tracker frame with the current screen-space gaze
+    /// point, top-left origin (Quartz/AX coordinates, not Cocoa).
     func updateGaze(at point: CGPoint) {
-        // TODO: AXUIElementCopyElementAtPosition(systemWideElement, point.x, point.y, &element)
-        // then read kAXRoleAttribute / kAXTitleAttribute / kAXFrameAttribute.
-        // Drive dwellStart / hasExplainedCurrent off whether the hit element
-        // changed, and fire onDwellExplain / onDwellConfirm at the thresholds above.
+        guard AXIsProcessTrusted() else { return }
+
+        var axElementRef: AXUIElement?
+        let result = AXUIElementCopyElementAtPosition(
+            systemWide,
+            Float(point.x),
+            Float(point.y),
+            &axElementRef
+        )
+
+        guard result == .success, let axElement = axElementRef, let sensed = describe(axElement) else {
+            resetDwell()
+            return
+        }
+
+        let key = "\(sensed.role)|\(sensed.title)|\(sensed.frame)"
+
+        if key != currentKey {
+            currentKey = key
+            dwellStart = Date()
+            hasExplainedCurrent = false
+            return
+        }
+
+        guard let start = dwellStart else { return }
+        let elapsed = Date().timeIntervalSince(start)
+
+        if !hasExplainedCurrent, elapsed >= explainDwellSeconds {
+            hasExplainedCurrent = true
+            onDwellExplain?(sensed)
+        } else if hasExplainedCurrent, elapsed >= confirmDwellSeconds {
+            onDwellConfirm?(sensed)
+            resetDwell()
+        }
     }
 
     /// Resolve a human-readable target description (from the website, e.g.
-    /// "the send button") to an on-screen frame, by walking the target app's
-    /// AX tree for a matching role/title. Used to draw the "go here" overlay.
+    /// "send button") to an on-screen frame, by walking the frontmost app's
+    /// AX tree for a matching title/description. Used to draw the overlay.
     func screenFrame(forElementDescribed description: String) -> CGRect? {
-        // TODO
+        guard AXIsProcessTrusted(),
+              let frontApp = NSWorkspace.shared.frontmostApplication else { return nil }
+
+        let appElement = AXUIElementCreateApplication(frontApp.processIdentifier)
+        return findElement(in: appElement, matching: description, depth: 0)?.frame
+    }
+
+    private func resetDwell() {
+        currentKey = nil
+        dwellStart = nil
+        hasExplainedCurrent = false
+    }
+
+    private func describe(_ element: AXUIElement) -> SensedElement? {
+        let role = stringAttribute(element, kAXRoleAttribute as CFString) ?? "unknown"
+        let title = stringAttribute(element, kAXTitleAttribute as CFString)
+            ?? stringAttribute(element, kAXDescriptionAttribute as CFString)
+            ?? ""
+
+        guard let position = pointAttribute(element, kAXPositionAttribute as CFString),
+              let size = sizeAttribute(element, kAXSizeAttribute as CFString) else {
+            return SensedElement(role: role, title: title, frame: .zero)
+        }
+
+        return SensedElement(role: role, title: title, frame: CGRect(origin: position, size: size))
+    }
+
+    private func findElement(in element: AXUIElement, matching description: String, depth: Int) -> SensedElement? {
+        guard depth < 8 else { return nil }
+
+        if let sensed = describe(element), !sensed.title.isEmpty,
+           sensed.title.lowercased().contains(description.lowercased()) {
+            return sensed
+        }
+
+        var childrenRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenRef) == .success,
+              let children = childrenRef as? [AXUIElement] else {
+            return nil
+        }
+
+        for child in children {
+            if let found = findElement(in: child, matching: description, depth: depth + 1) {
+                return found
+            }
+        }
         return nil
+    }
+
+    private func stringAttribute(_ element: AXUIElement, _ attribute: CFString) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success else { return nil }
+        return value as? String
+    }
+
+    private func pointAttribute(_ element: AXUIElement, _ attribute: CFString) -> CGPoint? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success,
+              let axValue = value else { return nil }
+        var point = CGPoint.zero
+        guard CFGetTypeID(axValue) == AXValueGetTypeID(),
+              AXValueGetValue((axValue as! AXValue), .cgPoint, &point) else { return nil }
+        return point
+    }
+
+    private func sizeAttribute(_ element: AXUIElement, _ attribute: CFString) -> CGSize? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success,
+              let axValue = value else { return nil }
+        var size = CGSize.zero
+        guard CFGetTypeID(axValue) == AXValueGetTypeID(),
+              AXValueGetValue((axValue as! AXValue), .cgSize, &size) else { return nil }
+        return size
     }
 }
