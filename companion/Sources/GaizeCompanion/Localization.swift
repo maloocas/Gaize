@@ -142,6 +142,47 @@ enum AppLanguage: String, CaseIterable {
         }
     }
 
+    /// "Hey Gaize" wakes Gaize up - until then everything heard is ignored.
+    /// "Gaize" isn't a real word, so common mishearings are included.
+    var wakePhrases: [String] {
+        switch self {
+        case .english: return [
+            "hey gaize", "hey gaze", "hey gays", "hey guys", "hey gay", "hey days", "hey case",
+            "hey guise", "hey gauze", "hey geez", "hi gaize", "hi gaze", "okay gaize", "ok gaize",
+        ]
+        case .spanish: return ["hola gaize", "oye gaize", "hola gay", "oye gay", "hola gase", "oye gase"]
+        case .french: return ["salut gaize", "dis gaize", "hé gaize", "salut gay", "salut gaz", "dis gay"]
+        }
+    }
+
+    /// Puts Gaize back to sleep.
+    var sleepPhrases: [String] {
+        switch self {
+        case .english: return [
+            "goodbye gaize", "bye gaize", "goodbye gaze", "bye gaze", "bye guys",
+            "stop listening", "go to sleep",
+        ]
+        case .spanish: return ["adiós gaize", "adios gaize", "deja de escuchar", "a dormir"]
+        case .french: return ["au revoir gaize", "arrête d'écouter", "va dormir"]
+        }
+    }
+
+    var wakeAcknowledgement: String {
+        switch self {
+        case .english: return "I'm listening."
+        case .spanish: return "Te escucho."
+        case .french: return "Je vous écoute."
+        }
+    }
+
+    var sleepAcknowledgement: String {
+        switch self {
+        case .english: return "Okay, I'll stop listening. Say hey Gaize when you need me."
+        case .spanish: return "De acuerdo, dejo de escuchar. Di hola Gaize cuando me necesites."
+        case .french: return "D'accord, j'arrête d'écouter. Dites salut Gaize quand vous avez besoin de moi."
+        }
+    }
+
     var sentConfirmation: String {
         switch self {
         case .english: return "Message sent."
