@@ -72,6 +72,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.output.isSpeaking ?? false
         }
 
+        bridge.onDebugExplain = { [weak self] in
+            self?.sensing.explainCurrentElement()
+        }
+
         bridge.onSetLanguage = { [weak self] languageCode in
             guard let self, let language = AppLanguage(rawValue: languageCode) else {
                 print("AppDelegate: unknown language code \"\(languageCode)\"")

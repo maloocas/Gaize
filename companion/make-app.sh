@@ -34,8 +34,36 @@ mkdir -p "$APP/Contents/Resources"
 cp "$BIN_PATH" "$APP/Contents/MacOS/GaizeCompanion"
 cp packaging/Info.plist "$APP/Contents/Info.plist"
 
+# SwiftPM's generated Bundle.module accessor looks for this bundle directly
+# under Bundle.main.bundleURL, i.e. Contents/ - not Contents/Resources/.
+RESOURCE_BUNDLE="$(swift build -c "$CONFIG" --show-bin-path)/GaizeCompanion_GaizeCompanion.bundle"
+if [[ -d "$RESOURCE_BUNDLE" ]]; then
+  cp -R "$RESOURCE_BUNDLE" "$APP/Contents/GaizeCompanion_GaizeCompanion.bundle"
+  # SwiftPM's generated bundle has no Info.plist, which codesign requires
+  # to recognize a .bundle-suffixed directory as valid bundle format
+  # (otherwise: "bundle format unrecognized, invalid, or unsuitable").
+  cat > "$APP/Contents/GaizeCompanion_GaizeCompanion.bundle/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>com.gaize.companion.resources</string>
+	<key>CFBundlePackageType</key>
+	<string>BNDL</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+</dict>
+</plist>
+PLIST
+fi
+
 echo "▸ ad-hoc signing with identifier $BUNDLE_ID"
-codesign --force --deep \
+if [[ -d "$APP/Contents/GaizeCompanion_GaizeCompanion.bundle" ]]; then
+  codesign --force --sign - "$APP/Contents/GaizeCompanion_GaizeCompanion.bundle"
+fi
+
+codesign --force \
   --sign - \
   --identifier "$BUNDLE_ID" \
   --entitlements packaging/GaizeCompanion.entitlements \

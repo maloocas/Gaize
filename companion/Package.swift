@@ -8,6 +8,7 @@ let package = Package(
         .executableTarget(
             name: "GaizeCompanion",
             path: "Sources/GaizeCompanion",
+            resources: [.copy("Resources/audio")],
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         )
     ]
