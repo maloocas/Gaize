@@ -8,7 +8,7 @@ import threading
 import time
 
 import AppKit
-from Foundation import NSData, NSObject, NSTimer
+from Foundation import NSData, NSObject, NSString
 import Vision
 import cv2
 import objc
@@ -66,7 +66,8 @@ class CalibrationView(AppKit.NSView):
         text = f"Look at each dot · {index+1} of {len(TARGETS)}"
         attrs = {AppKit.NSFontAttributeName: AppKit.NSFont.boldSystemFontOfSize_(26),
                  AppKit.NSForegroundColorAttributeName: AppKit.NSColor.whiteColor()}
-        text.drawAtPoint_withAttributes_((bounds.size.width/2-170,bounds.size.height-65),attrs)
+        NSString.stringWithString_(text).drawAtPoint_withAttributes_(
+            (bounds.size.width/2-170,bounds.size.height-65), attrs)
 
 
 class NativeController(NSObject):
