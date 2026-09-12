@@ -19,6 +19,8 @@ final class Bridge {
     var onDebugQuestion: ((String) -> Void)?
     /// The website finished a goal's last step - { "type": "goal_complete", "title": "..." }.
     var onGoalComplete: ((String) -> Void)?
+    /// The website left goal mode - remove the highlight box.
+    var onClearHighlight: (() -> Void)?
 
     private var listener: NWListener?
     private var connections: [NWConnection] = []
@@ -101,6 +103,10 @@ final class Bridge {
             guard let text = json["text"] as? String else { return }
             DispatchQueue.main.async { [weak self] in
                 self?.onDebugDictate?(text)
+            }
+        case "clear_highlight":
+            DispatchQueue.main.async { [weak self] in
+                self?.onClearHighlight?()
             }
         case "goal_complete":
             let title = json["title"] as? String ?? ""
