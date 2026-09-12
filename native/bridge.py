@@ -29,7 +29,8 @@ import time
 
 import Quartz
 import ApplicationServices as AS
-from AppKit import NSRunningApplication, NSWorkspace
+from AppKit import (NSPasteboard, NSPasteboardTypeString,
+                    NSRunningApplication, NSWorkspace)
 
 HOST, PORT = "127.0.0.1", 8766
 
@@ -224,26 +225,26 @@ def click(show_keyboard: bool = False):
 
 
 def insert_text(pid: int, text: str) -> bool:
-    """Insert composed text without borrowing the user's clipboard.
+    """Paste composed text reliably and leave that same text on the clipboard.
 
-    The old Command-V path restored the previous clipboard after a fixed delay.
-    Some apps process paste later than that, so they received the restored value
-    (often the commands used to launch OpenGaze) instead of the composed text.
-    Accessibility insertion is deterministic; Unicode key events are the broad
-    fallback for applications that do not expose AXSelectedText.
+    AXSelectedText can return success while Messages silently ignores the write.
+    Unicode events are also inconsistent in web and rich-text editors. Command-V
+    is the compatible path; keeping the composed text on the clipboard avoids
+    the old race where a delayed paste received prematurely restored contents.
     """
     if not activate(pid):
         return False
     time.sleep(.2)
-    ax_app=AS.AXUIElementCreateApplication(pid)
-    focused=_attr(ax_app,"AXFocusedUIElement")
-    if focused is not None:
-        try:
-            if AS.AXUIElementSetAttributeValue(focused,"AXSelectedText",text) == AS.kAXErrorSuccess:
-                return True
-        except Exception:
-            pass
-    type_text(text)
+    pasteboard=NSPasteboard.generalPasteboard()
+    pasteboard.clearContents()
+    if not pasteboard.setString_forType_(text,NSPasteboardTypeString):
+        return False
+    source=Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
+    for is_down in (True,False):
+        event=Quartz.CGEventCreateKeyboardEvent(source,9,is_down)  # V
+        Quartz.CGEventSetFlags(event,Quartz.kCGEventFlagMaskCommand)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap,event)
+    time.sleep(.15)
     return True
 
 
