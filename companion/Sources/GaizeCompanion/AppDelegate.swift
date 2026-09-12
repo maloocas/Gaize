@@ -110,6 +110,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.lastWebsiteOpenAt = Date()
             print("AppDelegate: opening website at \(AppDelegate.websiteURL)")
             self.output.speak("Opening Gaize.")
+            // Already open (e.g. coming back after a goal in Messages): switch
+            // to it - opening the file URL again would add another tab.
+            if self.bridge.isConnected {
+                self.bringBrowserToFront()
+                return
+            }
             // Explicitly activate the browser once it opens the page - a
             // plain NSWorkspace.open can leave it opened but backgrounded
             // (e.g. if a matching tab already existed), which isn't "go
@@ -123,6 +129,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 app?.activate(options: [])
             }
+        }
+
+        voiceCommands.isQuizActive = { [weak self] in
+            let mode = self?.bridge.websiteMode
+            return mode == "quiz" || mode == "feedback"
+        }
+
+        voiceCommands.onQuizSpeech = { [weak self] text in
+            self?.bridge.sendAction("quiz_say:\(text)")
         }
 
         voiceCommands.onOpenMessagesCommand = { [weak self] in
@@ -155,7 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         voiceCommands.onWebsiteAction = { [weak self] action in
             guard let self else { return }
             print("AppDelegate: website action \"\(action)\"")
-            if action.hasPrefix("open_goal:") {
+            if action.hasPrefix("open_goal:") || action == "quiz" || action == "scenario" {
                 // Saying a goal's name should land on that goal's page -
                 // open the site if needed, and bring the browser forward.
                 self.sendToWebsite(action, bringToFront: true)
@@ -447,11 +462,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func sendToWebsite(_ action: String, bringToFront: Bool, attempt: Int = 0) {
         if bridge.isConnected {
             bridge.sendAction(action)
-            if bringToFront, attempt == 0,
-               let browserURL = NSWorkspace.shared.urlForApplication(toOpen: AppDelegate.websiteURL),
-               let bundleID = Bundle(url: browserURL)?.bundleIdentifier,
-               let browser = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
-                browser.activate(options: [])
+            if bringToFront, attempt == 0 {
+                bringBrowserToFront()
             }
             return
         }
@@ -469,6 +481,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.sendToWebsite(action, bringToFront: bringToFront, attempt: attempt + 1)
         }
+    }
+
+    /// Activates the browser that opens the website (the default browser
+    /// for file URLs) without opening another tab.
+    private func bringBrowserToFront() {
+        guard let browserURL = NSWorkspace.shared.urlForApplication(toOpen: AppDelegate.websiteURL),
+              let bundleID = Bundle(url: browserURL)?.bundleIdentifier,
+              let browser = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first else { return }
+        browser.activate(options: [])
     }
 
     /// "send": focuses Messages' message body and presses Return, which is

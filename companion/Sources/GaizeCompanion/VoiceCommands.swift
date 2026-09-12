@@ -23,6 +23,10 @@ final class VoiceCommands {
     var onWake: ((Bool) -> Void)?
     /// Went to sleep - true if asked to, false after the idle timeout.
     var onSleep: ((Bool) -> Void)?
+    /// True while the website shows a quiz (or its results).
+    var isQuizActive: (() -> Bool)?
+    /// A phrase said during a quiz - the website matches it to an answer.
+    var onQuizSpeech: ((String) -> Void)?
     /// Fired with "home" / "back" / "learn" / "quiz" / "scenario" - direct
     /// voice navigation of the website's own buttons.
     var onWebsiteAction: ((String) -> Void)?
@@ -73,6 +77,7 @@ final class VoiceCommands {
     private let recipientSilence: TimeInterval = 1.0
     private let messageSilence: TimeInterval = 1.8
     private var pendingQuestion: DispatchWorkItem?
+    private var pendingQuiz: DispatchWorkItem?
     private let questionSilence: TimeInterval = 1.3
 
     /// Asleep until "hey Gaize" - then every command works until "goodbye
@@ -154,6 +159,8 @@ final class VoiceCommands {
         pendingDictation = nil
         pendingQuestion?.cancel()
         pendingQuestion = nil
+        pendingQuiz?.cancel()
+        pendingQuiz = nil
 
         let inputNode = audioEngine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
@@ -246,6 +253,13 @@ final class VoiceCommands {
             return
         }
 
+        // Quiz on screen: each pause-separated phrase goes to the website,
+        // which matches it to an answer ("B", "option C", "compose") or to
+        // "next question" / "try again". Commands below still work too.
+        if isQuizActive?() == true, isDictationModeActive?() != true {
+            scheduleQuizSpeech(segments, isFinal: result.isFinal)
+        }
+
         // Dictation fires on a pause, not only on the recognizer's final
         // result - with room noise or our own TTS in the mic, a session can
         // stay open indefinitely (observed: "lucas" said four times, never
@@ -296,8 +310,15 @@ final class VoiceCommands {
             return
         }
 
-        if isMuted?() == true {
-            print("VoiceCommands: muted (Output is speaking), ignoring \"\(newWords)\"")
+        // Commands used to be dropped outright while we were speaking - so
+        // "learn this goal" said over "Got it, Send a message" did nothing.
+        // Now only our own speech is ignored: echoed words never enter the
+        // transcript, and while speaking, a command whose phrase is in what
+        // we're saying can't fire (that's the echo, not the user).
+        let muted = isMuted?() == true
+        let ourSpeech = muted ? (spokenTextNow?()?.lowercased() ?? "") : ""
+        if muted, isEcho(newWords) {
+            print("VoiceCommands: ignoring \"\(newWords)\" - echo of our own speech")
             return
         }
 
@@ -305,6 +326,9 @@ final class VoiceCommands {
         recentTranscript.append((newWords, now))
         recentTranscript.removeAll { now.timeIntervalSince($0.at) > recentTranscriptWindow }
         let recentText = recentTranscript.map(\.text).joined(separator: " ")
+        let saidOne: (String) -> Bool = { phrase in
+            recentText.contains(phrase) && !(muted && ourSpeech.contains(phrase))
+        }
 
         let fire: (() -> Void) -> Void = { action in
             self.recentTranscript.removeAll()
@@ -315,26 +339,26 @@ final class VoiceCommands {
         }
 
         // Before the website check - both start with "open".
-        if language.openMessagesKeywords.contains(where: recentText.contains) {
+        if language.openMessagesKeywords.contains(where: saidOne) {
             fire { onOpenMessagesCommand?() }
-        } else if language.openWebsiteKeywords.contains(where: recentText.contains) {
+        } else if language.openWebsiteKeywords.contains(where: saidOne) {
             fire { onOpenWebsiteCommand?() }
-        } else if let goal = language.goalCommands.first(where: { $0.phrases.contains(where: recentText.contains) }),
+        } else if let goal = language.goalCommands.first(where: { $0.phrases.contains(where: saidOne) }),
                   isDictationModeActive?() != true {
             // A goal's name opens it - but never while dictating, where
             // "send a photo" is message text.
             fire { onWebsiteAction?("open_goal:\(goal.id)") }
-        } else if language.homeKeywords.contains(where: recentText.contains) {
+        } else if language.homeKeywords.contains(where: saidOne) {
             fire { onWebsiteAction?("home") }
-        } else if language.backToGoalsKeywords.contains(where: recentText.contains) {
+        } else if language.backToGoalsKeywords.contains(where: saidOne) {
             fire { onWebsiteAction?("back") }
-        } else if language.takeQuizKeywords.contains(where: recentText.contains) {
+        } else if language.takeQuizKeywords.contains(where: saidOne) {
             fire { onWebsiteAction?("quiz") }
-        } else if language.tryScenarioKeywords.contains(where: recentText.contains) {
+        } else if language.tryScenarioKeywords.contains(where: saidOne) {
             fire { onWebsiteAction?("scenario") }
-        } else if language.learnKeywords.contains(where: recentText.contains) {
+        } else if language.learnKeywords.contains(where: saidOne) {
             fire { onWebsiteAction?("learn") }
-        } else if language.explainKeywords.contains(where: recentText.contains) {
+        } else if language.explainKeywords.contains(where: saidOne) {
             fire { onExplainCommand?() }
         }
     }
@@ -456,6 +480,34 @@ final class VoiceCommands {
             return rest
         }
         return nil
+    }
+
+    private func scheduleQuizSpeech(_ segments: [String], isFinal: Bool) {
+        pendingQuiz?.cancel()
+        pendingQuiz = nil
+        guard dictationStartIndex < segments.count else { return }
+        let text = segments[dictationStartIndex...].joined(separator: " ")
+        let language = AppSettings.shared.language
+        guard !text.isEmpty, !isEcho(text),
+              !language.selectKeywords.contains(where: text.contains) else { return }
+        let wordCount = segments.count
+        let fire = { [weak self] in
+            guard let self else { return }
+            self.dictationStartIndex = wordCount
+            self.noteActivity()
+            print("VoiceCommands: quiz speech \"\(text)\"")
+            self.onQuizSpeech?(text)
+        }
+        if isFinal {
+            fire()
+            return
+        }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.lastSegments.count == wordCount else { return }
+            fire()
+        }
+        pendingQuiz = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: work)
     }
 
     private func scheduleQuestion(_ question: String, isFinal: Bool, wordCount: Int) {

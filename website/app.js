@@ -567,7 +567,9 @@ function handleVoiceAction(action) {
       // the user's spoken question; start it so each step is highlighted.
       // "open_goal:<id>" - the user said a goal's name; open its page,
       // same as clicking the goal card.
-      if (action && action.startsWith("open_goal:")) {
+      if (action && action.startsWith("quiz_say:")) {
+        handleQuizSpeech(action.slice("quiz_say:".length));
+      } else if (action && action.startsWith("open_goal:")) {
         const goal = GOALS.find((g) => g.id === action.slice("open_goal:".length));
         if (goal) showGoalDetail(goal);
       } else if (action && action.startsWith("start_goal:")) {
@@ -762,6 +764,61 @@ function renderQuizQuestion() {
   body.appendChild(options);
 }
 
+// Spoken quiz input, relayed by the companion. Answers are labeled A-D on
+// screen (see .quiz-option::before); say the letter ("B", "option C") or the
+// answer itself. Recognition spells a lone letter as a word - "bee", "see".
+const LETTER_SOUNDS = [
+  ["a", "ay", "eh"],
+  ["b", "be", "bee", "bea"],
+  ["c", "see", "sea", "si", "cee"],
+  ["d", "dee", "de"],
+];
+const ORDINALS = [
+  ["1", "one", "first"],
+  ["2", "two", "second"],
+  ["3", "three", "third"],
+  ["4", "four", "fourth"],
+];
+
+function normalizeSpeech(text) {
+  return text.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function handleQuizSpeech(text) {
+  const said = normalizeSpeech(text);
+  if (!said) return;
+
+  if (mode === "feedback") {
+    if (/\b(try again|retry|again)\b/.test(said)) startQuiz();
+    else if (/\b(back|goals|done|finish)\b/.test(said)) renderGoalList();
+    return;
+  }
+  if (mode !== "quiz") return;
+
+  const next = document.querySelector("#quiz-body .quiz-next");
+  if (next && /\b(next|continue|results|done)\b/.test(said)) {
+    next.click();
+    return;
+  }
+
+  const buttons = [...document.querySelectorAll("#quiz-body .quiz-option")];
+  if (!buttons.length || buttons[0].disabled) return;
+
+  // Letter or number: the whole phrase, optionally after a lead-in word.
+  const choice = said.replace(/^(option|answer|letter|choice|number|choose|pick|it s|its|is it|the)\s+/, "")
+    .replace(/\s+(one)$/, "");
+  let index = LETTER_SOUNDS.findIndex((sounds) => sounds.includes(choice));
+  if (index < 0) index = ORDINALS.findIndex((words) => words.includes(choice));
+  let pick = index >= 0 ? buttons[index] : null;
+
+  // Or the answer's own text ("compose", "the to field").
+  if (!pick) {
+    pick = buttons.find((b) => said.includes(normalizeSpeech(b.textContent)))
+      || buttons.find((b) => said.length >= 3 && normalizeSpeech(b.textContent).includes(said));
+  }
+  if (pick) pick.click();
+}
+
 // ---- Scenario (live-tracked in the real app) ----
 
 function startScenario() {
@@ -802,6 +859,8 @@ function renderScenario() {
 
 function renderFeedback() {
   mode = "feedback";
+  // Lets the companion know results are showing ("try again" / "back to goals").
+  reportState();
   const body = document.getElementById("quiz-body");
   body.innerHTML = "";
   const completedQuiz = quizAnswers.length > 0;
