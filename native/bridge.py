@@ -154,18 +154,42 @@ def move(x, y):
     Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
 
 
-def _focused_editable() -> dict | None:
+def _app_at_point(point) -> dict | None:
+    """Return the normal application window physically beneath a Quartz point."""
+    windows = Quartz.CGWindowListCopyWindowInfo(
+        Quartz.kCGWindowListOptionOnScreenOnly
+        | Quartz.kCGWindowListExcludeDesktopElements,
+        Quartz.kCGNullWindowID) or []
+    for window in windows:
+        if window.get("kCGWindowLayer", 1) != 0:
+            continue
+        bounds = window.get("kCGWindowBounds") or {}
+        x, y = float(bounds.get("X", 0)), float(bounds.get("Y", 0))
+        width, height = float(bounds.get("Width", 0)), float(bounds.get("Height", 0))
+        if x <= point.x <= x + width and y <= point.y <= y + height:
+            pid = int(window.get("kCGWindowOwnerPID") or 0)
+            if pid:
+                return {"pid": pid,
+                        "name": str(window.get("kCGWindowOwnerName") or "Application")}
+    return None
+
+
+def _focused_editable(target_app: dict | None = None) -> dict | None:
     """Describe the editable control that currently owns keyboard focus."""
-    app = NSWorkspace.sharedWorkspace().frontmostApplication()
-    if app is None:
+    # NSWorkspace.frontmostApplication can lag behind a synthetic click and
+    # return Terminal (the app that launched OpenGaze). Prefer the window that
+    # was physically beneath the pointer when mouse-down was posted.
+    target = target_app or frontmost_app()
+    if target is None:
         return None
     # Blink-clicking an on-screen key must not interpret the keyboard's own
     # preview entry as a new target and recursively reopen the keyboard. The
     # panel now lives in this process rather than a spawned one, so the check
     # is simply whether focus stayed with us.
-    if int(app.processIdentifier()) == os.getpid():
+    pid = int(target["pid"])
+    if pid == os.getpid():
         return None
-    ax_app = AS.AXUIElementCreateApplication(app.processIdentifier())
+    ax_app = AS.AXUIElementCreateApplication(pid)
     focused = _attr(ax_app, "AXFocusedUIElement")
     if focused is None:
         return None
@@ -176,7 +200,7 @@ def _focused_editable() -> dict | None:
     roles = {"AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"}
     if not (role in roles or subrole in roles or settable):
         return None
-    return {"pid": int(app.processIdentifier()), "app": app.localizedName(),
+    return {"pid": pid, "app": str(target.get("name") or "Application"),
             "role": str(subrole or role or "editable")}
 
 
@@ -190,13 +214,14 @@ def click(show_keyboard: bool = False):
     owns its panel and calls this purely to find out what got focused.
     """
     point = Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
+    target_app = _app_at_point(point)
     for kind in (Quartz.kCGEventLeftMouseDown, Quartz.kCGEventLeftMouseUp):
         event = Quartz.CGEventCreateMouseEvent(
             None, kind, point, Quartz.kCGMouseButtonLeft)
         Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
     # Focus changes land just after mouse-up, so look only after that settles.
     time.sleep(0.12)
-    return _focused_editable()
+    return _focused_editable(target_app)
 
 
 def insert_text(pid: int, text: str) -> bool:
