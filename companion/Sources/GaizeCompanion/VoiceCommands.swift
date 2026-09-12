@@ -359,6 +359,9 @@ final class VoiceCommands {
         } else if language.learnKeywords.contains(where: saidOne) {
             fire { onWebsiteAction?("learn") }
         } else if language.explainKeywords.contains(where: saidOne) {
+            // Explanation is guidance, not dictation. Reset the boundary
+            // before TTS starts so the spoken explanation cannot become the
+            // next phrase typed into an armed field.
             fire { onExplainCommand?() }
         }
     }
@@ -556,22 +559,45 @@ final class VoiceCommands {
             .trimmingCharacters(in: .punctuationCharacters.union(.whitespaces))
         if language.sendKeywords.contains(phrase) { return nil }
 
-        guard recipient else { return isEcho(pending) ? nil : pending }
+        guard recipient else {
+            // Explanations and confirmations can still arrive as recognition
+            // results after playback ends. Remove those recently spoken
+            // words before typing, while keeping the user's actual phrase.
+            let filtered = removingEchoWords(from: pending)
+            return filtered.isEmpty ? nil : filtered
+        }
 
-        let echoWords = Set((lingeringSpokenText?() ?? "").lowercased()
-            .components(separatedBy: CharacterSet.letters.inverted).filter { !$0.isEmpty })
-        var words: [String] = []
-        // Loose match - our "compose" comes back as "comp" / "composed".
-        let isEchoWord: (String) -> Bool = { word in
-            echoWords.contains { echo in
-                echo == word || (echo.count >= 3 && word.count >= 3 && (echo.hasPrefix(word) || word.hasPrefix(echo)))
-            }
-        }
-        for word in segments[start...] where !isEchoWord(word) && words.last != word {
-            words.append(word)
-        }
+        let words = pendingWordsWithoutEcho(from: segments[start...])
         guard (1...3).contains(words.count) else { return nil }
         return words.joined(separator: " ")
+    }
+
+    private func removingEchoWords(from text: String) -> String {
+        let words = text.split(separator: " ").map(String.init)
+        return words.filter { word in
+            !isEchoWord(word)
+        }.joined(separator: " ")
+    }
+
+    private func pendingWordsWithoutEcho<S: Sequence>(from pending: S) -> [String] where S.Element == String {
+        var words: [String] = []
+        for word in pending where !isEchoWord(word) && words.last != word {
+            words.append(word)
+        }
+        return words
+    }
+
+    // Loose match - speech recognition may return "comp" for "compose" or
+    // a nearby inflection of a word from our spoken output.
+    private func isEchoWord(_ word: String) -> Bool {
+        let normalized = word.lowercased().trimmingCharacters(in: .punctuationCharacters)
+        let echoWords = (lingeringSpokenText?() ?? "").lowercased()
+            .components(separatedBy: CharacterSet.letters.inverted)
+            .filter { !$0.isEmpty }
+        return echoWords.contains { echo in
+            echo == normalized || (echo.count >= 3 && normalized.count >= 3 &&
+                (echo.hasPrefix(normalized) || normalized.hasPrefix(echo)))
+        }
     }
 
     private func scheduleDictation(_ segments: [String]) {
