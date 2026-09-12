@@ -19,15 +19,15 @@ final class Output: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate
 
     private static let liveServerURL = URL(string: "http://127.0.0.1:8766/speak")!
 
-    /// The Chatterbox tiers (1 and 2) are off: both render a male-sounding
-    /// voice, where the system voice below is the female one this app used
-    /// before Chatterbox landed. Tier 2 is also a liability now that we
-    /// speak on every click - it blocks on a 6s HTTP timeout when the
-    /// server isn't running, and port 8766 is claimed by native/bridge.py
-    /// anyway. Flip this back to true once the clips in Resources/audio are
-    /// regenerated with a female speaker (chatterbox/generate_gaize_audio.py,
-    /// via an audio_prompt_path reference clip).
-    private static let useChatterboxVoice = false
+    /// Chatterbox tiers (1 and 2) are on. Requires chatterbox/tts_server.py
+    /// (sibling repo, not part of this one) running locally on :8766 for
+    /// tier 2 - without it, every dynamic line (confirmations, the generic
+    /// "this is the X" fallback) blocks on a 6s HTTP timeout before falling
+    /// back to the system voice below. That port is also what
+    /// native/bridge.py binds when OpenGaze's control server is running -
+    /// don't run both at once. Flip to false to go back to the system
+    /// voice outright (Samantha on en-US) with no server dependency.
+    private static let useChatterboxVoice = true
 
     private var speakingSince: Date?
     private var lastText: String?
