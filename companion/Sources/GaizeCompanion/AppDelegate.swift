@@ -29,6 +29,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// after one dictation.
     private var dictationKey: String?
     private var dictationElement: AXUIElement?
+    /// The To: field a contact name was last typed into - excluded from
+    /// implicit recipient dictation, so speech after the name goes to the
+    /// message body rather than adding more recipients.
+    private var filledRecipientField: AXUIElement?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         requestAccessibilityPermission()
@@ -183,7 +187,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func performDictation(_ spoken: String) {
-        if dictationElement == nil, let recipientField = sensing.focusedRecipientField() {
+        print("AppDelegate: dictation requested \"\(spoken)\" armed=\(dictationKey ?? "none") front=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?")")
+        // An empty To: field in a new message means the recipient comes
+        // first - even if an earlier message's body is still armed (that
+        // stale arming used to swallow the name). Skip only the To: field
+        // we just filled, in case its value doesn't reflect the contact.
+        if let recipientField = sensing.focusedRecipientField(),
+           !(filledRecipientField.map { CFEqual($0, recipientField) } ?? false) {
             dictationKey = "to_field"
             dictationElement = recipientField
         }
@@ -211,6 +221,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Thread.sleep(forTimeInterval: 0.3)
         }
 
+        sensing.click(axElement)
+        Thread.sleep(forTimeInterval: 0.15)
         Dictation.type(text, into: axElement)
 
         if dictationKey == "to_field" {
@@ -223,6 +235,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // sitting open, unaccepted). Give the lookup time to populate.
             Thread.sleep(forTimeInterval: 0.8)
             Dictation.confirmAutocomplete()
+            filledRecipientField = axElement
 
             // Auto-advance: move straight to the message body and arm it
             // for the next thing said, instead of making the user look at
