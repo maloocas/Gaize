@@ -58,14 +58,47 @@ final class Sensing {
         }
     }
 
+    /// Browsers report AXUIElementPerformAction(.press) as .success on a
+    /// plain <button> without necessarily routing it to the JS click
+    /// handler - the AX action path is proven reliable for native apps
+    /// (Messages), so only browser-owned elements get a real synthesized
+    /// click instead.
+    private static let browserBundleIDs: Set<String> = [
+        "com.google.Chrome", "com.apple.Safari", "org.mozilla.firefox",
+        "com.microsoft.edgemac", "com.brave.Browser",
+    ]
+
     /// Fired by a "select"/"click"/"choose"/"confirm" voice command.
     @discardableResult
     func confirmCurrentElement() -> SensedElement? {
         guard let axElement = currentAXElement, let sensed = currentSensed else { return nil }
-        AXUIElementPerformAction(axElement, kAXPressAction as CFString)
+
+        var pid: pid_t = 0
+        AXUIElementGetPid(axElement, &pid)
+        let ownerBundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? ""
+
+        if Self.browserBundleIDs.contains(ownerBundleID) {
+            print("Sensing: confirming \"\(sensed.title)\" via synthesized click (browser-owned)")
+            synthesizeClick(at: sensed.frame)
+        } else {
+            AXUIElementPerformAction(axElement, kAXPressAction as CFString)
+        }
+
         onConfirmed?(sensed)
         resetCurrent()
         return sensed
+    }
+
+    /// Posts a real mouse-down/mouse-up at the element's center, in
+    /// AX/Quartz (top-left origin) coordinates.
+    private func synthesizeClick(at frame: CGRect) {
+        guard frame.width > 0, frame.height > 0 else { return }
+        let point = CGPoint(x: frame.midX, y: frame.midY)
+
+        let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left)
+        let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left)
+        down?.post(tap: .cghidEventTap)
+        up?.post(tap: .cghidEventTap)
     }
 
     /// Fired by an "explain"/"what is this" voice command.
