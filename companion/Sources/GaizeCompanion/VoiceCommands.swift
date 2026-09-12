@@ -319,6 +319,11 @@ final class VoiceCommands {
             fire { onOpenMessagesCommand?() }
         } else if language.openWebsiteKeywords.contains(where: recentText.contains) {
             fire { onOpenWebsiteCommand?() }
+        } else if let goal = language.goalCommands.first(where: { $0.phrases.contains(where: recentText.contains) }),
+                  isDictationModeActive?() != true {
+            // A goal's name opens it - but never while dictating, where
+            // "send a photo" is message text.
+            fire { onWebsiteAction?("open_goal:\(goal.id)") }
         } else if language.homeKeywords.contains(where: recentText.contains) {
             fire { onWebsiteAction?("home") }
         } else if language.backToGoalsKeywords.contains(where: recentText.contains) {

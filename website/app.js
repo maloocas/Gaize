@@ -565,7 +565,12 @@ function handleVoiceAction(action) {
     default:
       // "start_goal:<id>" - the AI assistant picked the goal that answers
       // the user's spoken question; start it so each step is highlighted.
-      if (action && action.startsWith("start_goal:")) {
+      // "open_goal:<id>" - the user said a goal's name; open its page,
+      // same as clicking the goal card.
+      if (action && action.startsWith("open_goal:")) {
+        const goal = GOALS.find((g) => g.id === action.slice("open_goal:".length));
+        if (goal) showGoalDetail(goal);
+      } else if (action && action.startsWith("start_goal:")) {
         const goal = GOALS.find((g) => g.id === action.slice("start_goal:".length));
         if (goal) {
           showGoalDetail(goal);

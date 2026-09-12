@@ -153,8 +153,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         voiceCommands.onWebsiteAction = { [weak self] action in
+            guard let self else { return }
             print("AppDelegate: website action \"\(action)\"")
-            self?.bridge.sendAction(action)
+            if action.hasPrefix("open_goal:") {
+                // Saying a goal's name should land on that goal's page -
+                // open the site if needed, and bring the browser forward.
+                self.sendToWebsite(action, bringToFront: true)
+            } else {
+                self.bridge.sendAction(action)
+            }
         }
 
         // Armed explicitly (after selecting a text field / auto-advancing to
@@ -262,8 +269,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         gazeTracker.start()
         voiceCommands.start()
 
-        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             guard let self, let screenHeight = NSScreen.main?.frame.height else { return }
+            // Skip Gaize's own "select" clicks - only the user's count here.
+            if event.cgEvent?.getIntegerValueField(.eventSourceUserData) == Sensing.syntheticClickTag { return }
             let cocoaPoint = NSEvent.mouseLocation
             let axPoint = CGPoint(x: cocoaPoint.x, y: screenHeight - cocoaPoint.y)
             // Resolve the element during mouse-down, before the target app
@@ -429,6 +438,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.startGoalOnWebsite(goalID, attempt: attempt + 1)
+        }
+    }
+
+    /// Sends a voice_action to the website, opening it first if it isn't
+    /// connected. With bringToFront, an already-open site's browser is
+    /// activated rather than reopened (a file URL would add another tab).
+    private func sendToWebsite(_ action: String, bringToFront: Bool, attempt: Int = 0) {
+        if bridge.isConnected {
+            bridge.sendAction(action)
+            if bringToFront, attempt == 0,
+               let browserURL = NSWorkspace.shared.urlForApplication(toOpen: AppDelegate.websiteURL),
+               let bundleID = Bundle(url: browserURL)?.bundleIdentifier,
+               let browser = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
+                browser.activate(options: [])
+            }
+            return
+        }
+        if attempt == 0 {
+            let config = NSWorkspace.OpenConfiguration()
+            config.activates = bringToFront
+            NSWorkspace.shared.open(AppDelegate.websiteURL, configuration: config) { _, error in
+                if let error { print("AppDelegate: failed to open website: \(error)") }
+            }
+        }
+        guard attempt < 10 else {
+            print("AppDelegate: website never connected, dropping \(action)")
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.sendToWebsite(action, bringToFront: bringToFront, attempt: attempt + 1)
         }
     }
 
