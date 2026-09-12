@@ -21,6 +21,17 @@ final class Sensing {
     private var currentAXElement: AXUIElement?
     private var currentSensed: SensedElement?
 
+    /// A short rolling window of recent hit-tests (~250ms at the gaze
+    /// tracker's 30fps) - a "select" acts on whichever element was hit
+    /// most often in this window, not just the single most recent sample.
+    /// Speech recognition takes hundreds of ms to transcribe "select," and
+    /// people naturally start glancing toward the next thing right as they
+    /// finish speaking - trusting only the latest instantaneous sample
+    /// made select act on wherever gaze had already drifted to, not what
+    /// the user actually meant.
+    private var recentHits: [(element: AXUIElement, sensed: SensedElement)] = []
+    private let recentHitsCapacity = 8
+
     private var lastHeartbeat = Date.distantPast
 
     /// Called on every gaze-tracker frame with the current screen-space gaze
@@ -46,7 +57,13 @@ final class Sensing {
 
         guard result == .success, let axElement = axElementRef, let sensed = describe(axElement) else {
             resetCurrent()
+            recentHits.removeAll()
             return
+        }
+
+        recentHits.append((axElement, sensed))
+        if recentHits.count > recentHitsCapacity {
+            recentHits.removeFirst()
         }
 
         // Compare by AX element identity, not a rebuilt role/title/frame
@@ -58,6 +75,24 @@ final class Sensing {
             currentAXElement = axElement
             currentSensed = sensed
         }
+    }
+
+    /// Whichever element was actually hit most often in the recent window -
+    /// see recentHits' doc comment for why this beats "whatever's current."
+    private func mostFrequentRecentHit() -> (element: AXUIElement, sensed: SensedElement)? {
+        guard !recentHits.isEmpty else { return nil }
+
+        var counts: [CFHashCode: (element: AXUIElement, sensed: SensedElement, count: Int)] = [:]
+        for hit in recentHits {
+            let hash = CFHash(hit.element)
+            if var existing = counts[hash], CFEqual(existing.element, hit.element) {
+                existing.count += 1
+                counts[hash] = existing
+            } else {
+                counts[hash] = (hit.element, hit.sensed, 1)
+            }
+        }
+        return counts.values.max(by: { $0.count < $1.count }).map { ($0.element, $0.sensed) }
     }
 
     /// Browsers report AXUIElementPerformAction(.press) as .success on a
@@ -73,7 +108,9 @@ final class Sensing {
     /// Fired by a "select"/"click"/"choose"/"confirm" voice command.
     @discardableResult
     func confirmCurrentElement() -> SensedElement? {
-        guard let axElement = currentAXElement, let sensed = currentSensed else { return nil }
+        guard let (axElement, sensed) = mostFrequentRecentHit() ?? currentAXElement.flatMap({ el in currentSensed.map { (el, $0) } }) else {
+            return nil
+        }
 
         var pid: pid_t = 0
         AXUIElementGetPid(axElement, &pid)
@@ -212,6 +249,7 @@ final class Sensing {
     private func resetCurrent() {
         currentAXElement = nil
         currentSensed = nil
+        recentHits.removeAll()
     }
 
     private func describe(_ element: AXUIElement) -> SensedElement? {
@@ -219,6 +257,13 @@ final class Sensing {
         var title = stringAttribute(element, kAXTitleAttribute as CFString)
             ?? stringAttribute(element, kAXDescriptionAttribute as CFString)
             ?? ""
+        // The element geometry (frame) is queried from, once we borrow a
+        // title from a parent - must also borrow ITS frame, not the original
+        // leaf's. A leaf with no title (an inner <span>, an icon glyph) also
+        // tends to have an imprecise or degenerate frame - clicking it could
+        // silently miss the real clickable region even though the spoken
+        // title now sounds correct.
+        var geometrySource = element
 
         // Gaze precision is imperfect: it often lands on an untitled child
         // (an inner <span>, an AXStaticText) instead of the actual button
@@ -241,14 +286,15 @@ final class Sensing {
                 if !parentTitle.isEmpty {
                     title = parentTitle
                     role = stringAttribute(parent, kAXRoleAttribute as CFString) ?? role
+                    geometrySource = parent
                     break
                 }
                 current = parent
             }
         }
 
-        guard let position = pointAttribute(element, kAXPositionAttribute as CFString),
-              let size = sizeAttribute(element, kAXSizeAttribute as CFString) else {
+        guard let position = pointAttribute(geometrySource, kAXPositionAttribute as CFString),
+              let size = sizeAttribute(geometrySource, kAXSizeAttribute as CFString) else {
             return SensedElement(role: role, title: title, frame: .zero)
         }
 
