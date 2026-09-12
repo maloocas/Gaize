@@ -13,6 +13,7 @@ final class Output {
     }
 
     func speak(_ text: String) {
+        print("Output: speaking \"\(text)\"")
         synthesizer.stopSpeaking(at: .word)
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
