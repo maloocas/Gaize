@@ -25,3 +25,11 @@ def test_native_keyboard_records_swipe_during_double_blink_mode():
     assert "self.swipe_path.append((point.x,point.y))" in source
     assert "results=self.swipe_decoder.decode(self.swipe_path)" in source
     assert "class SwipeTraceView" in source
+
+
+def test_python_helpers_are_not_misread_as_objc_selectors():
+    source=(Path(__file__).parents[1]/"native"/"controller.py").read_text()
+    assert "def makeKey_" not in source
+    assert "def finishSwipe_" not in source
+    assert "def make_key" in source
+    assert "def finish_swipe" in source

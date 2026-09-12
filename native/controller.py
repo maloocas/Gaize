@@ -343,12 +343,12 @@ class NativeController(NSObject):
         self.pending_blink=False
         self.flashCrosshair_(None)
         target=click(show_keyboard=False)
-        if target and int(target["pid"]) != os.getpid(): self.showKeyboard_(target)
+        if target and int(target["pid"]) != os.getpid(): self.show_keyboard(target)
 
     def toggleDrag_(self, _sender):
         if self.keyboard_window is not None and self.keyboard_window.isVisible():
             if self.swipe_recording:
-                self.finishSwipe_()
+                self.finish_swipe()
             else:
                 self.swipe_recording=True; self.drag_mode=True
                 point=AppKit.NSEvent.mouseLocation(); self.swipe_path=[(point.x,point.y)]
@@ -366,16 +366,18 @@ class NativeController(NSObject):
             Quartz.CGEventCreateMouseEvent(None,kind,point,Quartz.kCGMouseButtonLeft))
         self.crosshair_view.setNeedsDisplay_(True)
 
-    def finishSwipe_(self):
+    @objc.python_method
+    def finish_swipe(self):
         self.swipe_recording=False; self.drag_mode=False
         results=self.swipe_decoder.decode(self.swipe_path)
         self.swipe_path=[]; self.status_item.button().setTitle_("● Blink Click · active")
         if results:
             self.keyboard_text+=results[0]+" "
             self.keyboard_display.setStringValue_(self.keyboard_text)
-            self.showSuggestions_(results[1:])
+            self.show_suggestions(results[1:])
 
-    def showSuggestions_(self, words):
+    @objc.python_method
+    def show_suggestions(self, words):
         for button in self.suggestion_buttons: button.removeFromSuperview()
         self.suggestion_buttons=[]
         if not words or self.keyboard_glass is None: return
@@ -383,11 +385,12 @@ class NativeController(NSObject):
         gap=10; button_w=min(190,(width-56-gap*(len(words)-1))/len(words)); total=button_w*len(words)+gap*(len(words)-1); x=(width-total)/2
         y=self.keyboard_window.frame().size.height-194
         for word in words[:5]:
-            button=self.makeKey_(word,f"SUGGEST:{word}",((x,y),(button_w,48)))
+            button=self.make_key(word,f"SUGGEST:{word}",((x,y),(button_w,48)))
             self.keyboard_glass.addSubview_(button); self.suggestion_buttons.append(button)
             x+=button_w+gap
 
-    def showKeyboard_(self, target):
+    @objc.python_method
+    def show_keyboard(self, target):
         self.keyboard_target=target; self.keyboard_text=""
         screen=AppKit.NSScreen.mainScreen().frame(); width=screen.size.width
         height=min(690,screen.size.height*.72)
@@ -421,7 +424,7 @@ class NativeController(NSObject):
             gap=10; key_h=72; key_w=min(112,(width-56-gap*(len(row)-1))/len(row))
             total=key_w*len(row)+gap*(len(row)-1); x=(width-total)/2
             for letter in row:
-                glass.addSubview_(self.makeKey_(letter,letter.lower(),((x,y),(key_w,key_h))))
+                glass.addSubview_(self.make_key(letter,letter.lower(),((x,y),(key_w,key_h))))
                 self.key_centers[letter.lower()]=(x+key_w/2,y+key_h/2)
                 x+=key_w+gap
             y-=key_h+12
@@ -430,14 +433,15 @@ class NativeController(NSObject):
                  ("CANCEL","CANCEL",1.0),("TYPE INTO APP ↗","INSERT",1.7))
         gap=10; unit=(width-56-gap*(len(actions)-1))/sum(a[2] for a in actions); x=28
         for label,value,span in actions:
-            button=self.makeKey_(label,value,((x,24),(unit*span,70)),value=="INSERT")
+            button=self.make_key(label,value,((x,24),(unit*span,70)),value=="INSERT")
             glass.addSubview_(button); x+=unit*span+gap
         self.swipe_trace_view=SwipeTraceView.alloc().initWithController_frame_(
             self,((0,0),(width,height)))
         glass.addSubview_(self.swipe_trace_view)
         self.keyboard_window.makeKeyAndOrderFront_(None); AppKit.NSApp.activateIgnoringOtherApps_(True)
 
-    def makeKey_(self, title, value, frame, accent=False):
+    @objc.python_method
+    def make_key(self, title, value, frame, accent=False):
         button=AppKit.NSButton.alloc().initWithFrame_(frame)
         button.setTitle_(title); button.setRepresentedObject_(value)
         button.setTarget_(self); button.setAction_("keyboardKey:")
@@ -460,7 +464,7 @@ class NativeController(NSObject):
             word=value.split(":",1)[1]; parts=self.keyboard_text.rstrip().split()
             if parts: parts[-1]=word
             self.keyboard_text=" ".join(parts)+(" " if parts else "")
-            self.showSuggestions_([])
+            self.show_suggestions([])
         else: self.keyboard_text+=value
         self.keyboard_display.setStringValue_(self.keyboard_text)
 
