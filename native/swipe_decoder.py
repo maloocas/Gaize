@@ -64,6 +64,10 @@ class SwipeDecoder:
         return self.templates[index]
 
     def decode(self,path,limit=6,radius=1.6):
+        return [word for _,word in self.decode_scored(path,limit,radius)]
+
+    def decode_scored(self,path,limit=6,radius=1.6):
+        """[(cost, word)] best first; lower cost is a better match."""
         if not path or not self.keys: return []
         fixations=[]; group=None
         for x,y in path:
@@ -91,4 +95,4 @@ class SwipeDecoder:
                     cost+=max(0,best/self.key_width-.5)/len(pauses)
                 cost+=.15*(self.max_log-math.log(self.frequency[index]+1))
                 results.append((cost,word))
-        return [word for _,word in sorted(results)[:limit]]
+        return sorted(results)[:limit]

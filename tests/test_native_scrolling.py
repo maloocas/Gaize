@@ -34,5 +34,5 @@ def test_scroll_zones_are_large_persistent_eye_targets():
 
 
 def test_blinks_over_scroll_controls_do_not_click_through():
-    body=_body("commitBlink_", "\n    @objc.python_method")
+    body=_body("leftClick_", "\n    @objc.python_method")
     assert "if self.scroll_direction_at_pointer(): return" in body

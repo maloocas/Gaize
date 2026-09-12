@@ -1,11 +1,8 @@
-"""Guards the right-click gesture.
+"""Guards the wink gestures.
 
-Right click is a deliberate long eye hold. Single and double blinks were already
-taken by click and drag, and chaining a reliable third blink is hard, so the
-gesture uses duration instead of counting - a range that was previously
-discarded as the user resting their eyes.
-
-Source-level checks: controller.py imports Vision and cv2.
+A left wink is a left click and a right wink a right click, on the selected
+target if there is one, otherwise at the pointer. Natural blinks must never
+click. Source-level checks: controller.py needs AppKit and a camera.
 """
 from pathlib import Path
 
@@ -19,17 +16,6 @@ def _body(name: str) -> str:
     return rest[:cut] if cut != -1 else rest
 
 
-def test_long_hold_window_cannot_overlap_an_ordinary_blink():
-    ns: dict = {}
-    for line in SOURCE.splitlines():
-        if line.startswith(("LONG_BLINK_MIN", "LONG_BLINK_MAX")):
-            exec(line, ns)
-    # process() treats 0.07-0.9s as a blink; the long hold must start after that
-    # or one gesture would ambiguously trigger both.
-    assert ns["LONG_BLINK_MIN"] > 0.9
-    assert ns["LONG_BLINK_MAX"] > ns["LONG_BLINK_MIN"]
-
-
 def test_right_click_posts_right_button_events_in_quartz_space():
     body = _body("rightClick_")
     assert "kCGEventRightMouseDown" in body and "kCGEventRightMouseUp" in body
@@ -39,33 +25,33 @@ def test_right_click_posts_right_button_events_in_quartz_space():
     assert "NSEvent.mouseLocation" not in body
 
 
-def test_long_hold_cancels_a_pending_left_click():
-    body = _body("rightClick_")
-    assert "self.pending_blink=False" in body, (
-        "otherwise the delayed single-click timer also fires a left click")
-    assert "blink_generation" in body
-
-
 def test_right_click_is_suppressed_where_it_makes_no_sense():
     body = _body("rightClick_")
     assert "pointer_over_keyboard()" in body
     assert "self.drag_mode" in body
 
 
-def test_process_routes_hold_duration_to_the_right_gesture():
-    body = _body("process")
-    assert "handleLongBlink:" in body
-    assert "handleBlink:" in body
-    assert "LONG_BLINK_MIN" in body and "LONG_BLINK_MAX" in body
+def test_winks_click_and_natural_blinks_do_not():
+    body = _body("handle_gesture")
+    assert 'gesture=="wink_left": self.leftClick_(None)' in body
+    assert "self.rightClick_(None)" in body
+    # The only thing a natural blink does is end a swiped word.
+    assert body.count('"blink"') == 1 and "swipe_boundary" in body
+
+
+def test_a_wink_clicks_the_selected_target_first():
+    body = _body("handle_gesture")
+    assert "move_pointer(*center(target))" in body
+    assert "self.clear_selection()" in body
+
+
+def test_hard_blink_selects_or_zooms():
+    body = _body("select_near_gaze")
+    assert "candidates(" in body and "open_zoom" in body and "set_selected" in body
 
 
 def test_a_non_gesture_fallback_exists():
     # Blink detection degrades under bad lighting; a right click that only
-    # exists as a timed eye hold would be unavailable exactly when needed.
+    # exists as a wink would be unavailable exactly when needed.
     assert '"rightClick:"' in SOURCE
     assert "Right Click at Pointer" in SOURCE
-
-
-def test_reticle_shows_the_hold_arming():
-    assert "long_blink_progress" in SOURCE
-    assert "appendBezierPathWithArcWithCenter_radius_startAngle_endAngle_clockwise_" in SOURCE

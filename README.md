@@ -57,13 +57,38 @@ For whole-computer control on macOS, use the native launcher from the project di
 python3 native/start.py
 ```
 
-It runs from the macOS menu bar—no browser is involved. Move the pointer with a
-normal mouse or trackpad, then blink to click at its current position. Clicking
-an editable field opens the large on-screen keyboard. Its oversized keys are
-selected with pointer movement plus blink-clicks; physical typing is not
-required. In the keyboard, double blink to start a swipe, trace through a word,
-then double blink again to decode it; alternate words appear as large selectable
-suggestions. Word suggestions also appear as you type: the row above the keys
+It runs from the macOS menu bar—no browser is involved. The webcam gaze engine
+(`native/gaze_engine.py`, MediaPipe face landmarks → eye patches → ridge
+regression, ported from `maloocas/Gaize`) moves the real pointer. Calibration
+starts once the camera is ready: look at each of 17 dots, then 5 check dots
+(used to remove the average offset), then close only your left eye when asked,
+so winks map to the right side. **◎ CALIBRATE** in the top-right strip reruns it.
+
+| Eye gesture | Action |
+|---|---|
+| natural blink | nothing (in the keyboard: start / end a swiped word) |
+| hard blink (squeeze, or hold both eyes ~0.4s) | select the target nearest your gaze |
+| wink left | left click the selected target, or the pointer |
+| wink right | right click the selected target, or the pointer |
+
+Selection snaps to the accessibility targets drawn as coloured boxes, within 90
+points of the gaze (`native/snapping.py`). One target in range is highlighted in
+yellow; several open a full-screen zoom of that area, where you look at one and
+hard-blink again to choose it (a wink cancels). The zoom needs **Screen
+Recording** permission; without it the choices are shown as labelled tiles. A
+selection clears after 8 seconds. Gesture thresholds are in
+`native/blink_gestures.py`. The crosshair dot turns yellow while your eyes are
+closing, and the crosshair turns orange when your head has moved away from its
+calibrated position (recalibrate if it stays orange).
+
+Clicking an editable field opens the full-screen keyboard. Blink once to start
+swiping, trace a word with your eyes, and blink to end it and start the next.
+Each word is decoded from several start delays (`native/swipe_session.py`) and
+its alternatives appear as suggestions. Look into the large band at the top to
+finish the sentence: the words go to `gpt-5.6-luna` (`native/llm.py`, key from
+`OPENAI_API_KEY` in `.env`, capped at 300 calls per run) and the decoded
+sentence is added to the text. Without a key, each word's top candidate is used.
+Keys can also be pressed with a left wink. Word suggestions also appear as you type: the row above the keys
 completes the word in progress and, once a word is finished, predicts the next
 one. Suggestions are ranked in tiers - names from your profile first, then the
 vocabulary this device actually uses, then general English - and they follow the
@@ -73,23 +98,11 @@ message; **TYPE INTO APP ↗** delivers the text and leaves it in the field. Wit
 an empty message SEND is just Return, for accepting a dialog or submitting a
 field. This ports the SHARK2-style decoder and frequency model from the
 `swipe-keyboard` branch of `maloocas/Gaize`. A click-through cyan crosshair shows the exact aim point in every app
-and flashes yellow when a blink click fires. Double blink to press-and-hold for
-dragging (the crosshair turns purple); double blink again to release.
+and flashes yellow when a click fires.
 
-**Right click:** hold your eyes closed for about a second. The gestures are told
-apart by how long the eyes stay shut, not by counting blinks, because single and
-double blinks are already spoken for and chaining a reliable third blink is hard:
-
-| Eyes closed for | Gesture |
-|---|---|
-| 0.07 – 0.9s | left click (twice in quick succession = drag, or swipe in the keyboard) |
-| 0.95 – 2.6s | **right click** |
-| longer | ignored — treated as resting your eyes |
-
-A ring fills around the crosshair as the hold builds and turns green once the
-right click will actually fire, so the timing is visible rather than guessed.
-**Right Click at Pointer** in the menu-bar item does the same thing without the
-gesture, for when lighting makes blink detection unreliable.
+The menu-bar item keeps a non-gesture route for everything: **Right Click at
+Pointer**, **Start / End Drag at Pointer** (the crosshair turns purple while
+dragging), **Eye Pointer Off** (go back to the mouse) and **Recalibrate**.
 
 Press Escape once or choose
 **Quit OpenGaze** from the menu-bar item to stop at any time.

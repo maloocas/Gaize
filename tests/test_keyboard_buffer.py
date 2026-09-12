@@ -26,7 +26,7 @@ def _body(name: str) -> str:
 
 def test_key_presses_are_told_apart_from_clicking_a_new_field():
     assert "def pointer_over_keyboard" in SOURCE
-    body = _body("commitBlink_")
+    body = _body("leftClick_")
     assert "pointer_over_keyboard()" in body
     assert "return" in body.split("on_keyboard")[-1], (
         "a click on our own panel must not fall through to show_keyboard")
