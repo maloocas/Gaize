@@ -209,7 +209,16 @@ final class VoiceCommands {
         // Wake word gate: until "hey Gaize", everything heard is ignored.
         let spokenSinceCommand = segments[min(dictationStartIndex, segments.count)...].joined(separator: " ")
         if !isAwake {
-            if language.wakePhrases.contains(where: spokenSinceCommand.contains) {
+            // Our own speech mentioning Gaize (an answer, "Opening Gaize")
+            // must never wake it.
+            // If what we said in the last few seconds itself contains a wake
+            // phrase, any wake heard now is that echo (possibly misheard -
+            // "hey gaize" comes back as "hey guys"), so skip it.
+            let ourSpeech = (lingeringSpokenText?() ?? "").lowercased()
+            let weJustSaidWakePhrase = language.wakePhrases.contains(where: ourSpeech.contains)
+            if weJustSaidWakePhrase, language.wakePhrases.contains(where: spokenSinceCommand.contains) {
+                print("VoiceCommands: ignoring wake phrase - echo of our own speech")
+            } else if language.wakePhrases.contains(where: spokenSinceCommand.contains) {
                 wake()
             } else if language.openWebsiteKeywords.contains(where: spokenSinceCommand.contains) {
                 // "Gaize open" says the name too - wake and open in one go.
