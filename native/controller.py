@@ -483,7 +483,9 @@ class CalibrationView(AppKit.NSView):
 
     def drawRect_(self, _rect):
         c = self.controller
-        AppKit.NSColor.colorWithRed_green_blue_alpha_(.025,.035,.055,1).setFill()
+        # Dim rather than blank: the desktop stays faintly visible so the screen
+        # never reads as dead, and the user keeps their bearings.
+        AppKit.NSColor.colorWithRed_green_blue_alpha_(.025,.035,.055,.88).setFill()
         AppKit.NSBezierPath.fillRect_(self.bounds())
         bounds = self.bounds()
         AppKit.NSColor.colorWithRed_green_blue_alpha_(.72,.10,.12,1).setFill()
@@ -856,7 +858,11 @@ class NativeController(NSObject):
         screen=AppKit.NSScreen.mainScreen().frame()
         self.cal_window=_overlay_window((screen.origin,screen.size),
                                         AppKit.NSScreenSaverWindowLevel-1,False)
-        self.cal_window.setOpaque_(True)
+        # Deliberately NOT opaque. This window covers the whole display, and when
+        # it was opaque with no camera frames to draw the screen was simply
+        # black - the user could not tell the app from a crashed machine, and
+        # could not see anything behind it to act on.
+        self.cal_window.setOpaque_(False)
         self.cal_view=CalibrationView.alloc().initWithController_(self)
         self.cal_window.setContentView_(self.cal_view)
 
@@ -1043,7 +1049,13 @@ class NativeController(NSObject):
         self.status_item.button().setTitle_("◉ OpenGaze · starting camera")
         self.cal_message="Starting camera… (iPhone: keep it nearby, on a stand facing you)"
         self.cal_target=None
-        self.cal_window.orderFrontRegardless(); self.cal_view.setNeedsDisplay_(True)
+        # The full-screen overlay is NOT shown here. Starting the camera can take
+        # seconds, or never succeed at all if permission is missing, and covering
+        # the entire display for the whole of that left the user staring at a
+        # blank screen with no way to tell what was happening. Progress goes to
+        # the menu bar; the overlay comes up only when there is a target to look
+        # at or a message that must be read.
+        self.cal_view.setNeedsDisplay_(True)
         threading.Thread(target=self.camera_loop_forever,daemon=True).start()
 
     @objc.python_method
@@ -1067,7 +1079,26 @@ class NativeController(NSObject):
         self.performSelector_withObject_afterDelay_("closeCalibration:",None,6.0)
 
     @objc.python_method
+    def camera_authorised(self):
+        """Whether this process may actually open the camera.
+
+        OpenCV asks for permission and then fails the open immediately without
+        waiting for the answer - "not authorized to capture video (status 0),
+        requesting..." followed by "camera failed to properly initialize". So the
+        state has to be checked here, or the loop retries forever against a
+        camera it is never allowed to have.
+        """
+        status=AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(
+            AVFoundation.AVMediaTypeVideo)
+        return status==AVFoundation.AVAuthorizationStatusAuthorized
+
+    @objc.python_method
     def camera_loop(self):
+        if not self.camera_authorised():
+            print("[OpenGaze] camera not authorised for this process",flush=True)
+            self.performSelectorOnMainThread_withObject_waitUntilDone_(
+                "cameraFailed:", None, False)
+            return
         try:
             from gaze_engine import GazeEngine
             width,height=screen_size()
