@@ -43,7 +43,7 @@ export function createSwipeKeyboard(root, { words, freqs, accuracy = 1.5, limit 
 
   function render() {
     output.innerHTML = lattice
-      .map((c) => `<div class="swipe-slot">${c.map((x) => `<span style="opacity:${0.35 + 0.65 * x.p}">${x.word} ${x.p.toFixed(2)}</span>`).join('')}</div>`)
+      .map((c) => `<div class="swipe-slot">${c.slice(0, 5).map((x) => `<span style="opacity:${0.35 + 0.65 * x.p}">${x.word} ${x.p.toFixed(2)}</span>`).join('')}</div>`)
       .join('');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!path?.length) return;
