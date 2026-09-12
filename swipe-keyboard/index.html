@@ -54,9 +54,9 @@
         const slots = kb.getSlots();
         kb.clear();
         if (!slots.length) return;
-        // Log what was sent (top 8 per slot, as in llm.js) and append the model's output below it.
+        // Log what was sent (top 5 per slot, as in llm.js) and append the model's output below it.
         const entry = document.createElement('div');
-        entry.textContent = `IN:\n${buildPrompt(slots.map((s) => ({ ...s, candidates: s.candidates.slice(0, 8) })), text)}\nOUT: …`;
+        entry.textContent = `IN:\n${buildPrompt(slots.map((s) => ({ ...s, candidates: s.candidates.slice(0, 5) })), text)}\nOUT: …`;
         textEl.append(entry);
         textEl.scrollTop = textEl.scrollHeight;
         const prior = text;

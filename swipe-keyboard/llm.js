@@ -2,12 +2,9 @@
 // prompt and parsing port directly to a native app; only `endpoint` is web-demo specific.
 
 const INSTRUCTIONS = `You decode sentences typed on a gaze swipe keyboard.
-Each slot is one swiped word. Candidates are ranked best-first by how well the word's shape matches the swipe path.
-"path" lists every key the swipe crossed, in order, including keys it merely passed over between letters, so most path
-letters are not in the word (e.g. "to" swiped from t to o gives "t r t y u i o"). It is also noisy (roughly 1.5 keys of error).
-Use it only as a weak hint; the candidate ranking already accounts for the path, so prefer higher-ranked candidates.
-Pick one word per slot to form the most likely sentence given the prior text. Usually the answer is among the candidates,
-but if none fits the context, you may use a word that is not listed as long as it is consistent with the path.
+Each slot is one swiped word. Candidates are ranked best-first by how well the word's shape matches the swipe,
+so prefer higher-ranked candidates. Pick one word per slot to form the most likely sentence given the prior text.
+Usually the answer is among the candidates, but if none fits the context, you may use a similar-looking word that is not listed.
 A slot's candidates are mutually exclusive guesses for a single typed word. Once you pick one, the others were never typed:
 do not use them elsewhere in the sentence and do not let them shape its meaning. Decide each slot, then build the sentence
 only from the chosen words. You may insert a word no slot accounts for only if the sentence clearly needs it (e.g. a
@@ -20,14 +17,14 @@ Reply in this format: first one line per slot with the chosen word, then the sen
 Sentence: <sentence>`;
 
 export function buildPrompt(slots, priorText = '') {
-  const lines = slots.map((s, i) => `${i + 1}. ${s.candidates.map((c) => c.word).join(' ')} | path: ${s.trace}`);
+  const lines = slots.map((s, i) => `${i + 1}. ${s.candidates.map((c) => c.word).join(' ')}`);
   return `Prior text: ${priorText || '(none)'}\n\nSlots:\n${lines.join('\n')}`;
 }
 
 // slots: [{candidates: [{word}], trace: 'h e l o'}] -> sentence string
 export async function decodeSentence(slots, {
   priorText = '',
-  topK = 8,
+  topK = 5,
   model = 'gpt-5.6-luna',
   effort = 'none',
   endpoint = '/llm',
