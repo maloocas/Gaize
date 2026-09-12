@@ -118,6 +118,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.output.isSpeaking ?? false
         }
 
+        voiceCommands.spokenTextNow = { [weak self] in
+            self?.output.recentSpokenText
+        }
+
         voiceCommands.onWebsiteAction = { [weak self] action in
             print("AppDelegate: website action \"\(action)\"")
             self?.bridge.sendAction(action)

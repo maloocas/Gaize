@@ -40,7 +40,7 @@ const GOALS = [
     id: "add-an-attachment",
     title: "Add an attachment",
     steps: [
-      { target: "attach", instruction: "Look at the attach button to add a photo or file" },
+      { target: "add", instruction: "Look at the attach button to add a photo or file" },
       { target: "photos", instruction: "Look at Photos to pick one from your library" },
       { target: "send", instruction: "Look at the send button to send it" },
     ],
@@ -58,7 +58,7 @@ const GOALS = [
     ],
     scenario: {
       instruction: "Attach a photo to your message and send it.",
-      expectedTargets: ["attach", "photos", "send"],
+      expectedTargets: ["add", "photos", "send"],
     },
   },
   {
@@ -302,6 +302,7 @@ function connect() {
   socket.addEventListener("open", () => {
     setStatus(true, "Connected to Gaize");
     requestSetLanguage(selectedLanguage);
+    reportState();
   });
   socket.addEventListener("close", () => {
     setStatus(false, "Waiting for Gaize…");
@@ -586,6 +587,31 @@ function renderFeedback() {
 
 function show(...ids) {
   ids.forEach((id) => (document.getElementById(id).hidden = false));
+  reportState();
+}
+
+// Every screen change goes through show(), so this tells the companion
+// (and its log) which screen the site is on.
+function reportState() {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+  // Wait a frame so the newly shown screen has been laid out.
+  requestAnimationFrame(() => {
+    // Screen-space centers of visible buttons (content area assumed to sit
+    // at the bottom of the window, as on macOS Chrome) - used by the
+    // automated select tests to aim the cursor.
+    const chromeTop = window.outerHeight - window.innerHeight;
+    const buttons = [...document.querySelectorAll("button")]
+      .filter((b) => b.offsetParent !== null)
+      .map((b) => {
+        const r = b.getBoundingClientRect();
+        return {
+          t: b.textContent.replace(/\s+/g, " ").trim().slice(0, 40),
+          x: Math.round(window.screenX + r.left + r.width / 2),
+          y: Math.round(window.screenY + chromeTop + r.top + r.height / 2),
+        };
+      });
+    socket.send(JSON.stringify({ type: "page_state", mode, goal: currentGoal ? currentGoal.id : null, buttons }));
+  });
 }
 
 function hide(...ids) {

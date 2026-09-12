@@ -3,28 +3,43 @@ import AVFoundation
 /// Spoken output, backed by KnowledgePack for explanation text.
 ///
 /// Three tiers, in preference order:
-/// 1. A pre-rendered Chatterbox TTS clip (Resources/audio/<language>/<key>.wav
-///    - see chatterbox/generate_gaize_audio.py in the sibling chatterbox
-///    repo) for anything in KnowledgePack, in the current language.
+/// 1. A pre-rendered Chatterbox clip (Resources/audio/<language>/<key>.wav,
+///    from chatterbox/generate_gaize_audio.py) for anything in KnowledgePack.
 /// 2. The live Chatterbox server (chatterbox/tts_server.py, English only,
-///    must be started separately - http://127.0.0.1:8766) for dynamic text
-///    that can't be pre-rendered (confirmations like "Selecting X", the
-///    generic "this is the X" fallback) - a few seconds slower than (1) but
-///    still Chatterbox's natural voice rather than the robotic system one.
-/// 3. AVSpeechSynthesizer with the best installed system voice, whenever
-///    neither of the above is available (non-English, or the live server
-///    isn't running).
+///    http://127.0.0.1:8766) for dynamic text - confirmations, the generic
+///    "this is the X" fallback.
+/// 3. AVSpeechSynthesizer with the best installed system voice, when neither
+///    of the above is available.
 ///
-/// Tracks isSpeaking (across all three paths) so VoiceCommands can mute
-/// itself while this is talking - without that, the mic picks up our own
-/// TTS through the speakers and transcribes it right back as a command
-/// (e.g. "Selecting compose" contains "select", re-triggering it).
+/// Exposes isSpeaking and recentSpokenText so VoiceCommands can tell the
+/// user's voice apart from our own TTS coming back through the speakers.
 final class Output: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate {
     private let synthesizer = AVSpeechSynthesizer()
     private var audioPlayer: AVAudioPlayer?
-    private(set) var isSpeaking = false
 
     private static let liveServerURL = URL(string: "http://127.0.0.1:8766/speak")!
+
+    private var speakingSince: Date?
+    private var lastText: String?
+    private var lastTextValidUntil = Date.distantPast
+    /// Bumped on every new utterance, so a slow live-TTS response for an
+    /// older one can't start playing after a newer one.
+    private var generation = 0
+
+    /// Capped at 8s so a delegate callback that never arrives (a player
+    /// replaced mid-playback doesn't report finishing) can't leave voice
+    /// commands muted forever.
+    var isSpeaking: Bool {
+        guard let since = speakingSince else { return false }
+        return Date().timeIntervalSince(since) < 8
+    }
+
+    /// What we're saying now, or said within the last 1.5s - the mic keeps
+    /// hearing the tail of our speech briefly after playback ends.
+    var recentSpokenText: String? {
+        if isSpeaking { return lastText }
+        return Date() < lastTextValidUntil ? lastText : nil
+    }
 
     override init() {
         super.init()
@@ -32,57 +47,58 @@ final class Output: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate
     }
 
     func speakExplanation(for element: SensedElement) {
+        let text = KnowledgePack.explanation(for: element)
         if let entry = KnowledgePack.matchedEntry(for: element),
-           playPreRendered(key: entry.key) {
+           playPreRendered(key: entry.key, text: text) {
             return
         }
-        speak(KnowledgePack.explanation(for: element))
+        speak(text)
     }
 
     func speakConfirmation(for element: SensedElement) {
         speak(KnowledgePack.confirmation(for: element))
     }
 
-    /// Plays Resources/audio/<language>/<key>.wav if it exists. Returns
-    /// false (having played nothing) if there's no clip for this key/language,
-    /// so the caller can fall back to live TTS.
-    private func playPreRendered(key: String) -> Bool {
+    private func beginSpeaking(_ text: String) {
+        generation += 1
+        audioPlayer?.stop()
+        synthesizer.stopSpeaking(at: .immediate)
+        speakingSince = Date()
+        lastText = text
+    }
+
+    private func endSpeaking() {
+        speakingSince = nil
+        lastTextValidUntil = Date().addingTimeInterval(1.5)
+    }
+
+    private func playPreRendered(key: String, text: String) -> Bool {
         let language = AppSettings.shared.language.rawValue
         guard let url = Bundle.module.url(
             forResource: key,
             withExtension: "wav",
             subdirectory: "audio/\(language)"
-        ) else {
+        ), let player = try? AVAudioPlayer(contentsOf: url) else {
             return false
         }
 
-        do {
-            let player = try AVAudioPlayer(contentsOf: url)
-            player.delegate = self
-            audioPlayer = player
-            print("Output: playing pre-rendered \(language)/\(key).wav")
-            synthesizer.stopSpeaking(at: .immediate)
-            isSpeaking = true
-            player.play()
-            return true
-        } catch {
-            print("Output: failed to play \(url): \(error)")
-            return false
-        }
+        beginSpeaking(text)
+        player.delegate = self
+        audioPlayer = player
+        print("Output: playing pre-rendered \(language)/\(key).wav")
+        player.play()
+        return true
     }
 
-    /// Dynamic text (not in KnowledgePack): tries the live Chatterbox
-    /// server first (English only), falling back to the system voice if
-    /// it's not running, times out, or errors.
     func speak(_ text: String) {
-        let language = AppSettings.shared.language
-        guard language == .english else {
+        beginSpeaking(text)
+        guard AppSettings.shared.language == .english else {
             speakSystemVoice(text)
             return
         }
 
         print("Output: requesting live TTS for \"\(text)\"")
-        isSpeaking = true
+        let myGeneration = generation
 
         var request = URLRequest(url: Self.liveServerURL)
         request.httpMethod = "POST"
@@ -91,39 +107,25 @@ final class Output: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate
         request.timeoutInterval = 6
 
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            guard let self else { return }
-
-            guard error == nil, let data, !data.isEmpty,
-                  (response as? HTTPURLResponse)?.statusCode == 200 else {
-                print("Output: live TTS server unavailable (\(error?.localizedDescription ?? "bad response")), falling back to system voice")
-                DispatchQueue.main.async { self.speakSystemVoice(text) }
-                return
-            }
-
             DispatchQueue.main.async {
-                self.playLiveAudio(data, text: text)
+                guard let self, self.generation == myGeneration else { return }
+                guard error == nil, let data, !data.isEmpty,
+                      (response as? HTTPURLResponse)?.statusCode == 200,
+                      let player = try? AVAudioPlayer(data: data) else {
+                    print("Output: live TTS unavailable (\(error?.localizedDescription ?? "bad response")), using system voice")
+                    self.speakSystemVoice(text)
+                    return
+                }
+                player.delegate = self
+                self.audioPlayer = player
+                print("Output: playing live TTS for \"\(text)\"")
+                player.play()
             }
         }.resume()
     }
 
-    private func playLiveAudio(_ data: Data, text: String) {
-        do {
-            let player = try AVAudioPlayer(data: data)
-            player.delegate = self
-            audioPlayer = player
-            print("Output: playing live TTS for \"\(text)\"")
-            player.play()
-        } catch {
-            print("Output: failed to play live TTS audio: \(error), falling back to system voice")
-            speakSystemVoice(text)
-        }
-    }
-
     private func speakSystemVoice(_ text: String) {
         print("Output: speaking (system voice) \"\(text)\"")
-        audioPlayer?.stop()
-        synthesizer.stopSpeaking(at: .word)
-        isSpeaking = true
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         utterance.voice = Self.bestVoice(for: AppSettings.shared.language)
@@ -131,23 +133,23 @@ final class Output: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        isSpeaking = false
+        endSpeaking()
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        isSpeaking = false
+        // Cancelled to make way for a newer utterance, which has already
+        // marked itself as speaking - don't clobber that.
     }
 
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        isSpeaking = false
+        if player === audioPlayer {
+            endSpeaking()
+        }
     }
 
-    /// The default AVSpeechSynthesisVoice(language:) picks the robotic
-    /// "compact" voice. Prefer an installed Premium, then Enhanced voice
-    /// for the language - these are the natural-sounding Siri-quality
-    /// voices, downloaded via System Settings > Accessibility > Spoken
-    /// Content > System Voice (or Voices...). Falls back to the default
-    /// compact voice if neither is installed.
+    /// Prefer an installed Premium, then Enhanced voice over the default
+    /// compact one (downloaded via System Settings > Accessibility >
+    /// Spoken Content).
     private static var cachedVoices: [AppLanguage: AVSpeechSynthesisVoice] = [:]
 
     private static func bestVoice(for language: AppLanguage) -> AVSpeechSynthesisVoice? {
@@ -159,7 +161,6 @@ final class Output: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate
             ?? AVSpeechSynthesisVoice(language: language.rawValue)
 
         if let chosen {
-            print("Output: using voice \"\(chosen.name)\" (\(chosen.quality.rawValue)) for \(language.rawValue)")
             cachedVoices[language] = chosen
         }
         return chosen
