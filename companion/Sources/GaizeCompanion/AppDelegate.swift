@@ -103,6 +103,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 print("AppDelegate: unknown language code \"\(languageCode)\"")
                 return
             }
+            // The website resends its current language on every connect,
+            // including the common case where it's already what we're
+            // set to - restarting the audio engine unnecessarily here
+            // raced with startup once and left voice capture silently
+            // dead for the rest of the session (no error, no more heard
+            // transcripts). Only actually restart on a real change.
+            guard AppSettings.shared.language != language else { return }
             print("AppDelegate: switching language to \(language.rawValue)")
             AppSettings.shared.language = language
             self.voiceCommands.restartForLanguageChange()

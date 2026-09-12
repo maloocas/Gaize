@@ -85,6 +85,12 @@ final class VoiceCommands {
 
         let inputNode = audioEngine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
+        // Defensive: installTap traps with a fatal error if a tap is
+        // already installed on this bus. removeTap is a safe no-op when
+        // none exists - guards against any path that could call
+        // startListening() twice in close succession (e.g. a recognition
+        // session's own restart racing a restartForLanguageChange call).
+        inputNode.removeTap(onBus: 0)
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
             request.append(buffer)
         }
