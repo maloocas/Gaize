@@ -29,6 +29,12 @@ final class VoiceCommands {
     /// into the armed text field via onDictate.
     var isDictationModeActive: (() -> Bool)?
     var onDictate: ((String) -> Void)?
+    /// True while a new message's To: field is still empty - speech then is
+    /// treated as a contact name.
+    var isRecipientPending: (() -> Bool)?
+    /// Output's text for several seconds after it's spoken, to strip our
+    /// own echoed words out of a contact name.
+    var lingeringSpokenText: (() -> String?)?
 
     private var recognizer: SFSpeechRecognizer?
     private let audioEngine = AVAudioEngine()
@@ -52,6 +58,11 @@ final class VoiceCommands {
     private var pendingSend: DispatchWorkItem?
     private let phrasePause: TimeInterval = 0.7
     private let sendSilence: TimeInterval = 1.0
+    /// Words before this index in the current session were already typed.
+    private var dictationStartIndex = 0
+    private var pendingDictation: DispatchWorkItem?
+    private let recipientSilence: TimeInterval = 1.0
+    private let messageSilence: TimeInterval = 1.8
 
     /// Recognition often finalizes after a single word, so a multi-word
     /// phrase like "open website" can land as two isolated sessions - a
@@ -114,6 +125,9 @@ final class VoiceCommands {
         sendFiredThisSession = false
         pendingSend?.cancel()
         pendingSend = nil
+        dictationStartIndex = 0
+        pendingDictation?.cancel()
+        pendingDictation = nil
 
         let inputNode = audioEngine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
@@ -170,17 +184,19 @@ final class VoiceCommands {
         // Words after a send (background noise) mustn't be dictated or acted on.
         if sendFiredThisSession { return }
 
-        // Dictation takes the whole finished utterance, so a multi-word name
-        // or message isn't cut off at its first word.
-        if result.isFinal, isDictationModeActive?() == true, !commandFiredThisSession {
-            let full = segments.joined(separator: " ")
-            let isCommand = language.selectKeywords.contains(where: full.contains)
-            if !full.isEmpty, !isCommand, !isEcho(full) {
-                print("VoiceCommands: dictation \"\(full)\"")
-                recentTranscript.removeAll()
-                onDictate?(full)
+        // Dictation fires on a pause, not only on the recognizer's final
+        // result - with room noise or our own TTS in the mic, a session can
+        // stay open indefinitely (observed: "lucas" said four times, never
+        // finalized, never typed).
+        if result.isFinal {
+            pendingDictation?.cancel()
+            pendingDictation = nil
+            if !commandFiredThisSession, let text = dictationCandidate(segments) {
+                fireDictation(text, upTo: segments.count)
                 return
             }
+        } else {
+            scheduleDictation(segments)
         }
 
         guard firstChanged < segments.count else { return }
@@ -284,6 +300,63 @@ final class VoiceCommands {
         }
         pendingSend = work
         DispatchQueue.main.asyncAfter(deadline: .now() + sendSilence, execute: work)
+    }
+
+    /// What to type for the words heard since the last dictation, or nil.
+    /// For an empty To: field: the last pause-separated phrase, minus our
+    /// own echoed words and repeats ("got it compose lucas lucas" -> "lucas"),
+    /// if it's name-sized. For the message body: everything since.
+    private func dictationCandidate(_ segments: [String]) -> String? {
+        guard dictationStartIndex < segments.count else { return nil }
+        let recipient = isRecipientPending?() == true
+        guard recipient || isDictationModeActive?() == true else { return nil }
+
+        let language = AppSettings.shared.language
+        let pending = segments[dictationStartIndex...].joined(separator: " ")
+        if language.selectKeywords.contains(where: pending.contains) { return nil }
+
+        var start = segments.count - 1
+        while start > dictationStartIndex, start < segmentArrivals.count,
+              segmentArrivals[start].timeIntervalSince(segmentArrivals[start - 1]) < phrasePause {
+            start -= 1
+        }
+        let phrase = segments[start...].joined(separator: " ")
+            .trimmingCharacters(in: .punctuationCharacters.union(.whitespaces))
+        if language.sendKeywords.contains(phrase) { return nil }
+
+        guard recipient else { return isEcho(pending) ? nil : pending }
+
+        let echoWords = Set((lingeringSpokenText?() ?? "").lowercased()
+            .components(separatedBy: CharacterSet.letters.inverted).filter { !$0.isEmpty })
+        var words: [String] = []
+        for word in segments[start...] where !echoWords.contains(word) && words.last != word {
+            words.append(word)
+        }
+        guard (1...3).contains(words.count) else { return nil }
+        return words.joined(separator: " ")
+    }
+
+    private func scheduleDictation(_ segments: [String]) {
+        pendingDictation?.cancel()
+        pendingDictation = nil
+        guard !commandFiredThisSession, let text = dictationCandidate(segments) else { return }
+        let wordCount = segments.count
+        // A name is short - act quickly. A message has natural mid-sentence
+        // pauses, so wait longer before deciding it's finished.
+        let delay = isRecipientPending?() == true ? recipientSilence : messageSilence
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.commandFiredThisSession, self.lastSegments.count == wordCount else { return }
+            self.fireDictation(text, upTo: wordCount)
+        }
+        pendingDictation = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func fireDictation(_ text: String, upTo index: Int) {
+        dictationStartIndex = index
+        recentTranscript.removeAll()
+        print("VoiceCommands: dictation \"\(text)\"")
+        onDictate?(text)
     }
 
     /// True if every heard word appears in what Output is saying (or just
