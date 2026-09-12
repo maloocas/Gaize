@@ -15,6 +15,7 @@ final class Bridge {
     var onDebugExplain: (() -> Void)?
     var onDebugSelect: (() -> Void)?
     var onDebugDictate: ((String) -> Void)?
+    var onDebugSend: (() -> Void)?
 
     private var listener: NWListener?
     private var connections: [NWConnection] = []
@@ -95,6 +96,10 @@ final class Bridge {
             guard let text = json["text"] as? String else { return }
             DispatchQueue.main.async { [weak self] in
                 self?.onDebugDictate?(text)
+            }
+        case "debug_send":
+            DispatchQueue.main.async { [weak self] in
+                self?.onDebugSend?()
             }
         case "page_state":
             // Which screen the website is on - logged for observability.

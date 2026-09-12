@@ -13,6 +13,8 @@ final class VoiceCommands {
     var onSelectCommand: (() -> Void)?
     var onExplainCommand: (() -> Void)?
     var onOpenWebsiteCommand: (() -> Void)?
+    /// Saying just "send" (the whole utterance) sends the Messages draft.
+    var onSendCommand: (() -> Void)?
     /// Fired with "home" / "back" / "learn" / "quiz" / "scenario" - direct
     /// voice navigation of the website's own buttons.
     var onWebsiteAction: ((String) -> Void)?
@@ -45,6 +47,11 @@ final class VoiceCommands {
     private var firedSelectIndices: Set<Int> = []
     private var lastSelectAt = Date.distantPast
     private var commandFiredThisSession = false
+    private var segmentArrivals: [Date] = []
+    private var sendFiredThisSession = false
+    private var pendingSend: DispatchWorkItem?
+    private let phrasePause: TimeInterval = 0.7
+    private let sendSilence: TimeInterval = 1.0
 
     /// Recognition often finalizes after a single word, so a multi-word
     /// phrase like "open website" can land as two isolated sessions - a
@@ -103,6 +110,10 @@ final class VoiceCommands {
         lastSegments = []
         firedSelectIndices = []
         commandFiredThisSession = false
+        segmentArrivals = []
+        sendFiredThisSession = false
+        pendingSend?.cancel()
+        pendingSend = nil
 
         let inputNode = audioEngine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
@@ -148,6 +159,16 @@ final class VoiceCommands {
             firstChanged += 1
         }
         lastSegments = segments
+
+        // Wall-clock arrival of each word - a revised word keeps its slot's
+        // original time. Used to split speech into pause-separated phrases.
+        let arrivedAt = Date()
+        segmentArrivals = segments.indices.map { i in
+            i < segmentArrivals.count ? segmentArrivals[i] : arrivedAt
+        }
+        checkForSend(segments, isFinal: result.isFinal)
+        // Words after a send (background noise) mustn't be dictated or acted on.
+        if sendFiredThisSession { return }
 
         // Dictation takes the whole finished utterance, so a multi-word name
         // or message isn't cut off at its first word.
@@ -221,6 +242,48 @@ final class VoiceCommands {
         } else if language.explainKeywords.contains(where: recentText.contains) {
             fire { onExplainCommand?() }
         }
+    }
+
+    /// "send" must be a phrase on its own: a pause before it (or the start
+    /// of the session) and ~1s of silence after. A whole-utterance match
+    /// failed live - background speech right after "send" landed in the same
+    /// recognition session, so the final text was never just "send". The
+    /// silence-after rule keeps "send me the file" as dictation.
+    private func checkForSend(_ segments: [String], isFinal: Bool) {
+        pendingSend?.cancel()
+        pendingSend = nil
+        guard !sendFiredThisSession, !segments.isEmpty else { return }
+
+        // Start of the trailing phrase: the last word that arrived after a pause.
+        var start = segments.count - 1
+        while start > 0,
+              segmentArrivals[start].timeIntervalSince(segmentArrivals[start - 1]) < phrasePause {
+            start -= 1
+        }
+        let phrase = segments[start...].joined(separator: " ")
+            .trimmingCharacters(in: .punctuationCharacters.union(.whitespaces))
+        guard AppSettings.shared.language.sendKeywords.contains(phrase), !isEcho(phrase) else { return }
+
+        let wordCount = segments.count
+        let fire = { [weak self] in
+            guard let self, !self.sendFiredThisSession else { return }
+            self.sendFiredThisSession = true
+            self.commandFiredThisSession = true
+            self.recentTranscript.removeAll()
+            print("VoiceCommands: SEND")
+            self.onSendCommand?()
+        }
+        if isFinal {
+            fire()
+            return
+        }
+        // Fire once no further word has followed for a moment.
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.lastSegments.count == wordCount else { return }
+            fire()
+        }
+        pendingSend = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + sendSilence, execute: work)
     }
 
     /// True if every heard word appears in what Output is saying (or just
