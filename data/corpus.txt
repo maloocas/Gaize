@@ -1,0 +1,582 @@
+My back hurts.
+I'm so uncomfortable.
+Can you move me?
+My leg is numb.
+I need to shift.
+This pillow is lumpy.
+Can I have another one?
+My head needs support.
+Please adjust my chair.
+I'm slipping down.
+Can you pull me up?
+My arm is tingling.
+I need to stretch.
+This position is bad.
+It's really hurting.
+My neck is stiff.
+Can you get the wedge?
+I need a cushion.
+This hard surface hurts.
+Can you soften this?
+I need to sit up.
+Please raise my back.
+My feet are cold.
+Can I have a blanket?
+I need to lie down.
+I'm too warm now.
+Please lower my head.
+My hip is sore.
+I need to turn.
+Can you help me turn?
+I can't reach my foot.
+Please scratch my back.
+My shoulder is aching.
+This is not working.
+I need to be flat.
+My whole body hurts.
+Can you change this?
+I need to breathe easier.
+Please move my arm.
+My side is bothering me.
+I need more room.
+My legs are crossed.
+Please uncross my legs.
+I feel pressure here.
+Can you relieve it?
+My bottom is sore.
+I need a donut cushion.
+This is very painful.
+I need a different pillow.
+Can you fix my gown?
+It's bunched up.
+My ear is hurting.
+I need to roll.
+Can you get the hoist?
+I need a gel pad.
+This is really uncomfortable.
+I need to be propped.
+Please reposition me.
+I need to sit forward.
+My body is tired.
+I need water.
+Can I have a drink?
+My throat is dry.
+Please get me water.
+I am thirsty.
+More water, please.
+I want some juice.
+Is there any water here?
+I need to eat.
+I am hungry.
+What is for dinner?
+Can I have a snack?
+I want some food.
+Please give me lunch.
+I am very hungry.
+When is breakfast?
+I need to go.
+Bathroom, please.
+I have to pee.
+Can you help me to the bathroom?
+I need to use the toilet.
+Is the bathroom free?
+I really need to go.
+Bathroom now, please.
+I am cold.
+It is too cold in here.
+Please turn up the heat.
+I need a sweater.
+My hands are cold.
+It feels chilly.
+Can you close the window?
+I am too hot.
+It is very warm.
+Can we open a window?
+Please turn on the fan.
+I need less blankets.
+I feel overheated.
+Turn down the heat.
+It's warm in here.
+I need a blanket.
+Can I have a warm blanket?
+Where is my blanket?
+I want my soft blanket.
+Can you get my blanket?
+I feel sleepy now.
+I need to rest.
+I am tired.
+I want to sleep.
+Can I get comfortable?
+I need help.
+Can you assist me?
+I need something.
+Please help me.
+I need your help.
+Thank you for helping.
+I appreciate your help.
+I am grateful.
+Yes, please.
+No, thank you.
+I need a nurse.
+Can you get the doctor?
+My head hurts badly.
+I feel very weak.
+Is it time for medicine?
+I need my pain pills.
+Please adjust my pillow.
+I am feeling nauseous.
+Do I have an appointment?
+When is my next therapy?
+I feel cold.
+Please get me a blanket.
+Can you help me sit up?
+My back really aches.
+I need to use the restroom.
+Is the doctor here yet?
+I feel a bit better.
+Can I have some water?
+This medication makes me sleepy.
+My leg is tingling.
+I need an ice pack.
+When can I eat again?
+I feel lightheaded.
+Please check my blood pressure.
+My throat is sore.
+I feel very tired.
+Did I take my morning pills?
+I need help changing position.
+My stomach feels uneasy.
+What time is my physical therapy?
+I have a follow-up appointment.
+Can you call my family?
+I need to tell the nurse something.
+I feel quite warm.
+Please take my temperature.
+I am very uncomfortable.
+What did the doctor say?
+I need my glasses.
+My vision is blurry.
+I feel anxious.
+Can I have a warm drink?
+My mouth is dry.
+I need help with my blanket.
+I think I have a fever.
+This medicine tastes bad.
+My arm is stiff.
+I need to see the therapist.
+I feel a bit stronger now.
+What is this new medication for?
+I am dizzy.
+My breathing feels shallow.
+Please call for assistance.
+I feel so restless.
+When can I go home?
+I need to talk to the doctor.
+My chest feels tight.
+Is anyone there?
+I need a new bandage.
+I feel a little sleepy.
+Is Dad here yet?
+Where is Mom?
+I miss my brother.
+I love my sister.
+Are the kids coming over?
+When will Grandma visit?
+I want to see Grandpa.
+Are we having visitors?
+Who is coming today?
+I like having company.
+Can you call my cousin?
+I want to talk to Aunt Susan.
+When is Uncle John visiting?
+Is anyone here to see me?
+I feel lonely sometimes.
+I miss my old friends.
+Can we invite them over?
+I’d like a family dinner.
+Who can come for lunch?
+I want to see my daughter.
+My son, when is he coming?
+I miss my grandchildren so much.
+Are they visiting this weekend?
+What time will they arrive?
+Can you tell them I said hi?
+Please say hello to my family.
+I’m looking forward to seeing them.
+It’s been too long.
+I want a hug from Mom.
+Dad, can you sit with me?
+I like being with family.
+They make me happy.
+Who is at the door?
+Is that my sister’s car?
+I hear voices outside.
+Are they here for me?
+Please let them in.
+Can we plan a get-together?
+I’d love to see everyone.
+When is the best time?
+What day works for them?
+I can’t wait for their visit.
+It means a lot to me.
+I think about them often.
+I hope they are doing well.
+Please send my love.
+Tell them I miss them.
+Can we schedule a call?
+I want to hear their news.
+It's good to catch up.
+My family is important.
+I love my whole family.
+Thank you for helping me connect.
+I feel much better now.
+I hope they visit soon.
+I’m excited to see them.
+Bring my niece for a visit.
+My nephew is so funny.
+I want to play games.
+Let's make some memories.
+Thank you.
+You're welcome.
+Excuse me.
+I'm sorry.
+Pardon me.
+That's right.
+I agree.
+I don't agree.
+Maybe later.
+I'm not sure.
+Sounds good.
+That works for me.
+Not really.
+I guess so.
+That's interesting.
+Oh, really?
+How are you?
+I'm fine, thanks.
+Good morning.
+Good afternoon.
+Good evening.
+Good night.
+See you.
+What's up?
+Not much.
+How's it going?
+It's going well.
+Can I help?
+What do you think?
+I think so.
+I don't think so.
+Me too.
+Me neither.
+That's true.
+That's not true.
+I understand.
+I don't understand.
+Could you repeat that?
+One more time, please.
+Nice to meet you.
+It was good seeing you.
+Have a good day.
+You too.
+What's new?
+Nothing much.
+Just checking in.
+I'm here.
+I'm listening.
+Okay, got it.
+I am very happy today.
+This is so exciting.
+I feel good about that.
+I am having fun.
+This makes me smile.
+I feel so peaceful.
+Everything feels just right.
+I am feeling content.
+I'm so relaxed now.
+That was really nice.
+I feel a bit tired.
+I'm feeling very sleepy.
+I need a nap.
+My body feels heavy.
+I am so exhausted.
+I could use a rest.
+I'm ready for bed.
+Just want to sleep now.
+I am feeling frustrated.
+This is really annoying.
+I'm getting irritated.
+Why is this so hard?
+I don't understand this.
+This makes me mad.
+I am losing my patience.
+I wish this would stop.
+I am a little bored.
+I have nothing to do.
+This is kind of dull.
+I need something interesting.
+Can we do something different?
+I'm feeling restless.
+I need a change.
+What can we do now?
+I am feeling scared.
+That startled me.
+I'm a bit nervous.
+I feel a little anxious.
+Is everything okay?
+I don't like this feeling.
+My heart is pounding.
+I need some comfort.
+I am so sad.
+This makes me teary.
+I feel very down.
+I'm feeling a bit blue.
+I just want to cry.
+This situation hurts.
+I need a hug.
+My emotions are strong now.
+I am feeling brave.
+I feel courageous today.
+I can do this.
+I am feeling determined.
+I will try my best.
+I feel ready for anything.
+I am very curious.
+I wonder about that.
+I like to watch TV.
+The game is on tonight.
+Baseball is my favorite sport.
+What book are you reading?
+This music is really good.
+Let's go outside today.
+The weather looks nice.
+I want to watch a movie.
+Who is playing tonight?
+That pitcher is amazing.
+I love reading mysteries.
+Can you turn up the music?
+It's a beautiful day out.
+Is it going to rain?
+I enjoy a good sitcom.
+Did our team win?
+I'm reading a new novel.
+This song makes me happy.
+Let's take a walk.
+The sun feels warm.
+I like documentaries best.
+Baseball season is here.
+This author is brilliant.
+My favorite band is playing.
+I need some fresh air.
+Is it cold outside?
+What's on Netflix?
+Go Astros!
+This book is so exciting.
+I like classical music.
+Let's sit on the porch.
+I hope it doesn't storm.
+I watch a lot of sports.
+The game was a shutout.
+I finished my book.
+This song is my jam.
+I love the outdoors.
+A little breezy today.
+I need a new show.
+Another home run!
+I'm starting a new series.
+Do you like this artist?
+Let's go to the park.
+The sky is so blue.
+I enjoyed that episode.
+What a great catch!
+I can't put this book down.
+I love live music.
+I want to feel the sun.
+It's perfect weather today.
+I like romantic comedies.
+That was a tough loss.
+This story is fascinating.
+I'm listening to a podcast.
+Being outside feels good.
+The clouds look interesting.
+I'm catching up on shows.
+World Series is exciting.
+I need a good book.
+I like to listen to jazz.
+This device helps me talk.
+It has a screen.
+I see words on the screen.
+I touch the screen to speak.
+My voice comes from this device.
+The volume is too low.
+Can you turn up the volume?
+Please make the volume louder.
+The volume is too high.
+Can you turn down the volume?
+Please make it quieter.
+I need to slow down.
+This device is too fast.
+Can you slow the speech rate?
+Please make it talk slower.
+I need more time to think.
+I made a mistake.
+Oops, that was wrong.
+Let me start over.
+I want to rephrase that.
+Can I clear the screen?
+I need to erase that.
+This technology is amazing.
+It helps me communicate.
+I am learning to use it.
+It takes practice.
+Sometimes it is hard.
+I get frustrated sometimes.
+But it helps me a lot.
+I can tell you things.
+I can ask questions.
+This device gives me a voice.
+It speaks for me.
+I choose the words.
+The machine says them out loud.
+I am still learning the buttons.
+I am learning the vocabulary.
+It has many different words.
+I can customize it.
+I can add new words.
+It has different voices.
+I picked this voice.
+Do you like this voice?
+Can you hear me clearly?
+Is my voice too quiet?
+Is my voice too loud?
+I need to charge the battery.
+The battery is low.
+It needs power.
+This is my communication device.
+It’s a speech generator.
+I use it every day.
+It is very important to me.
+I appreciate your patience.
+Thank you for listening.
+I am trying my best.
+Technology makes this possible.
+I am grateful for this.
+It helps me connect.
+This device is my voice.
+I am speaking now.
+I need more time.
+Just a little bit longer.
+I’ll do it later.
+Can we do this tomorrow?
+Not right now.
+Wait for me.
+I’ll be ready soon.
+How long will that take?
+I need a minute.
+Let’s plan for next week.
+What is the time?
+I’m running late.
+I'm early today.
+This needs to happen now.
+I am in a hurry.
+Can we reschedule?
+I have an appointment.
+My schedule is packed.
+I have some free time.
+What’s the deadline?
+When will you be here?
+I'll wait patiently.
+Is it almost finished?
+Just a few more steps.
+I am almost done.
+I need to plan ahead.
+This is taking too long.
+I’ll start soon.
+Give me a moment.
+I will do it eventually.
+How much time do we have?
+This is urgent.
+I can do it quickly.
+I am on time.
+I missed my window.
+I need to be quicker.
+Let's not delay.
+I prefer to plan.
+My schedule changed.
+Is this happening today?
+I need to know when.
+I’ll tell you soon.
+This will not take long.
+I want to wait.
+I can’t wait much longer.
+How much time is left?
+I need a break now.
+Let’s meet tomorrow.
+I am available then.
+I am busy today.
+I have a tight schedule.
+This is a priority.
+I will get to it.
+I need more hours.
+I'm working on it now.
+I'll let you know soon.
+What is the ETA?
+I will finish this.
+I need to hurry up.
+I'm almost there.
+How are you feeling?
+Are you okay?
+What happened?
+What is that?
+Where is my…
+Where are we going?
+Did you see that?
+Did you hear me?
+Can you help me?
+Could you do something?
+Will you get that?
+Would you mind?
+May I ask a question?
+Can I ask something?
+Is that right?
+Is this yours?
+Are you busy?
+Are we almost there?
+Do you know him?
+Do you know her?
+Do you know where?
+Do you want to?
+What time is it?
+What's the plan?
+What are you doing?
+What are you thinking?
+What do you mean?
+Who is that person?
+Who are you?
+Who's there?
+Whose turn is it?
+Why did that happen?
+Why are you laughing?
+Why is it like this?
+When can we go?
+When is it ready?
+How much does it cost?
+How long will it take?
+How do I do this?
+How do you feel?
+Did you remember?
+Did you get it?
+Did you call them?
+Did you finish?
+Where did you go?
+Where did you put it?
+Can you tell me?
+Can I have a minute?
+Would you like anything?
+Do you understand?
+Is this what you want?
+What should I do?
+What happened to it?
+Where is the bathroom?
+Did you find it?
+Can you explain?
