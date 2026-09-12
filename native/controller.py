@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 import collections
+import atexit
+import os
+from pathlib import Path
 import threading
 import time
 
@@ -20,6 +23,7 @@ from gaze_math import GazeCalibration
 
 
 TARGETS = ((.08,.08),(.5,.08),(.92,.08),(.08,.5),(.5,.5),(.92,.5),(.08,.92),(.5,.92),(.92,.92))
+PID_FILE = Path("/private/tmp/opengaze.pid")
 
 
 def _points(region):
@@ -289,4 +293,6 @@ if __name__ == "__main__":
     app=AppKit.NSApplication.sharedApplication()
     app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
     controller=NativeController.alloc().init()
+    PID_FILE.write_text(str(os.getpid()))
+    atexit.register(lambda: PID_FILE.unlink(missing_ok=True))
     app.run()
