@@ -1,6 +1,7 @@
 .venv/
 .native-venv/
 OpenGaze.app/Contents/MacOS/OpenGaze
+OpenGaze.app/Contents/_CodeSignature/
 __pycache__/
 *.pyc
 .env
