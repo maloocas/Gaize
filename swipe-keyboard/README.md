@@ -11,7 +11,7 @@ python3 -m http.server 8000
 
 Open http://localhost:8000. **Space** stands in for a blink. Each press ends the current word and starts recording the next one. Your first press only starts recording.
 
-We can't know how long the eyes take to reach the next word's first letter, so each word is decoded 5 times. Each decode starts the path at a different delay after the boundary: 0, 0.2, 0.4, 0.6 and 0.8 s. Each decode keeps its top 3 candidates, which gives up to 15 per word. The page shows them grouped by start delay. **Backspace** deletes the last word. Click a suggestion to replace the last word.
+We can't know how long the eyes take to reach the next word's first letter, so each word is decoded 5 times. Each decode starts the path at a different delay after the boundary: 0, 0.2, 0.4, 0.6 and 0.8 s. Each decode keeps its top 3 candidates, which gives up to 15 per word. The candidates are then merged into one list sorted by score, and a word found at several delays keeps its best score. **Backspace** deletes the last word. Click a suggestion to replace the last word.
 
 ## How it works
 
@@ -31,8 +31,8 @@ The decoder expects positions in viewport coordinates.
 ```js
 const kb = createSwipeKeyboard(el, {
   ...(await loadWords('./words.txt')),
-  // Called once per word: candidates = [{ word, p, offset }, ...], top 3 for each
-  // start delay (offset in ms); p sums to 1 within each offset.
+  // Called once per word: candidates = [{ word, p, offset }, ...], sorted best first,
+  // p sums to 1, offset = the start delay (ms) that gave the word its best score.
   // lattice = every word's candidate list so far. Hand these to the LLM.
   onWord: (candidates, lattice) => {},
 });

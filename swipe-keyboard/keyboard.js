@@ -54,11 +54,8 @@ export function createSwipeKeyboard(root, {
 
   function render() {
     output.innerHTML = lattice
-      .map((c) => `<div class="swipe-slot">${offsets
-        .map((o) => `<div class="swipe-group"><i>+${o / 1000}s</i>${c
-          .filter((x) => x.offset === o)
-          .map((x) => `<span style="opacity:${0.35 + 0.65 * x.p}">${x.word} ${x.p.toFixed(2)}</span>`)
-          .join('')}</div>`)
+      .map((c) => `<div class="swipe-slot">${c
+        .map((x) => `<span style="opacity:${0.35 + 0.65 * x.p}">${x.word} ${x.p.toFixed(2)}</span>`)
         .join('')}</div>`)
       .join('');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -75,11 +72,18 @@ export function createSwipeKeyboard(root, {
     const i = path.findIndex((p) => p.t >= cutoff);
     if (i < 0) return [];
     const sub = path.slice(Math.max(0, i - 1)); // include the position at the cutoff
-    const results = decoder.decode(sub, { radius: accuracy, limit: perOffset });
-    if (!results.length) return [];
-    const exps = results.map((r) => Math.exp(-(r.cost - results[0].cost) / temperature));
+    return decoder.decode(sub, { radius: accuracy, limit: perOffset }).map((r) => ({ ...r, offset }));
+  }
+
+  // Merges all offsets' candidates, keeping each word's best (lowest-cost) offset,
+  // then sorts globally and turns costs into probabilities.
+  function merge(results) {
+    const best = new Map();
+    for (const r of results) if (!best.has(r.word) || r.cost < best.get(r.word).cost) best.set(r.word, r);
+    const sorted = [...best.values()].sort((a, b) => a.cost - b.cost);
+    const exps = sorted.map((r) => Math.exp(-(r.cost - sorted[0].cost) / temperature));
     const sum = exps.reduce((a, b) => a + b, 0);
-    return results.map((r, j) => ({ word: r.word, p: exps[j] / sum, offset }));
+    return sorted.map((r, i) => ({ word: r.word, p: exps[i] / sum, offset: r.offset }));
   }
 
   return {
@@ -94,10 +98,10 @@ export function createSwipeKeyboard(root, {
       t0 = t;
       path = last ? [{ ...last, t }] : [];
     },
-    // Decodes the recorded path from each start offset. Candidates are [{word, p, offset}],
-    // up to perOffset per offset; p is a softmax over that offset's candidates.
+    // Decodes the recorded path from each start offset (top perOffset each), merged and
+    // sorted globally. Candidates are [{word, p, offset}], p sums to 1, offset = best start.
     end() {
-      const candidates = path?.length ? offsets.flatMap(decodeFrom) : [];
+      const candidates = path?.length ? merge(offsets.flatMap(decodeFrom)) : [];
       path = null;
       if (candidates.length) {
         lattice.push(candidates);
