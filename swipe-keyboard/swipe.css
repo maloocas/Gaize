@@ -1,0 +1,36 @@
+.swipe-kb {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 2vh;
+  padding: 3vh 3vw;
+  background: #08090d;
+  color: #e8ecf4;
+  font: 600 3vh system-ui, sans-serif;
+  user-select: none;
+}
+.swipe-output {
+  flex: 1;
+  font-size: 4.5vh;
+  line-height: 1.3;
+  overflow: auto;
+}
+.swipe-suggestions, .swipe-row { display: flex; gap: 1vw; justify-content: center; }
+.swipe-suggestions { min-height: 9vh; }
+.swipe-keys { display: flex; flex-direction: column; gap: 1.2vh; }
+.swipe-key {
+  --dwell: 0;
+  width: 8.6vw;
+  height: 11vh;
+  display: grid;
+  place-items: center;
+  border-radius: 1vh;
+  text-transform: uppercase;
+  background: linear-gradient(to top, rgba(120, 200, 255, 0.35) calc(var(--dwell) * 100%), #1a1d26 0);
+}
+.swipe-key.wide { width: 20vw; text-transform: none; }
+.swipe-key.suggestion { width: auto; height: 9vh; padding: 0 2vw; text-transform: none; }
+.swipe-key.recording { outline: 3px solid #78c8ff; }
+.swipe-trace { position: fixed; inset: 0; pointer-events: none; }
