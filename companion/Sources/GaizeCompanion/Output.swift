@@ -1,19 +1,15 @@
 import AVFoundation
 
-/// Spoken output. TODO: swap generated phrasing for real pre-written
-/// explanation clips per element/app once those exist (see docs in website
-/// content); this generator is a placeholder that's always available.
+/// Spoken output, backed by KnowledgePack for real explanation text.
 final class Output {
     private let synthesizer = AVSpeechSynthesizer()
 
     func speakExplanation(for element: SensedElement) {
-        let label = element.title.isEmpty ? element.role : element.title
-        speak("This is the \(label).")
+        speak(KnowledgePack.explanation(for: element))
     }
 
     func speakConfirmation(for element: SensedElement) {
-        let label = element.title.isEmpty ? element.role : element.title
-        speak("Selecting \(label).")
+        speak(KnowledgePack.confirmation(for: element))
     }
 
     func speak(_ text: String) {
