@@ -15,7 +15,7 @@ def test_keyboard_prefers_accessibility_caret_insertion():
 def test_keyboard_is_pointer_operable_without_physical_typing():
     assert "POINT + BLINK TO TYPE" in SOURCE
     assert "NSVisualEffectView" in SOURCE
-    assert "makeKey_" in SOURCE
+    assert "make_key" in SOURCE
 
 
 def test_keyboard_does_not_reopen_itself_on_blink_keypress():

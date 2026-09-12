@@ -33,6 +33,7 @@ def main() -> None:
     subprocess.check_call(["swiftc", str(ROOT / "native" / "launcher.swift"), "-o", str(launcher)], env=build_env)
     subprocess.check_call(["codesign", "--force", "--deep", "--sign", "-", str(ROOT / "OpenGaze.app")])
     PID_FILE.unlink(missing_ok=True)
+    LOG_FILE.write_text("")
     try:
         subprocess.check_call(["open", "-n", str(ROOT / "OpenGaze.app")], cwd=ROOT)
     except KeyboardInterrupt:
