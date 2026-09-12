@@ -366,6 +366,29 @@ final class Sensing {
         return nil
     }
 
+    /// Messages' To: field, if Messages is in front and that field has
+    /// keyboard focus - i.e. the user is starting a new message, however
+    /// they got there (compose button, Cmd+N, a click).
+    func focusedRecipientField() -> AXUIElement? {
+        guard AXIsProcessTrusted(),
+              let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+              front == Self.targetBundleID || front == "com.apple.KeyboardAccessAgent",
+              let messages = NSWorkspace.shared.runningApplications.first(where: {
+                  $0.bundleIdentifier == Self.targetBundleID
+              }) else { return nil }
+
+        let app = AXUIElementCreateApplication(messages.processIdentifier)
+        AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &ref) == .success,
+              let raw = ref else { return nil }
+        let element = raw as! AXUIElement
+        let title = stringAttribute(element, kAXTitleAttribute as CFString)
+            ?? stringAttribute(element, kAXDescriptionAttribute as CFString)
+            ?? ""
+        return title.lowercased() == "to:" ? element : nil
+    }
+
     private func stringAttribute(_ element: AXUIElement, _ attribute: CFString) -> String? {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success else { return nil }
