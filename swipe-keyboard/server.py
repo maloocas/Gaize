@@ -1,6 +1,7 @@
 """Serves the demo and forwards POST /llm to the OpenAI Responses API, so the key stays server-side.
 
-    OPENAI_API_KEY=sk-... python3 server.py
+    cp .env.example .env   # then put your key in .env
+    python3 server.py
 """
 import http.server
 import json
@@ -8,7 +9,15 @@ import os
 import urllib.error
 import urllib.request
 
-KEY = os.environ["OPENAI_API_KEY"]
+HERE = os.path.dirname(os.path.abspath(__file__))
+# Values already in the environment win over .env.
+if os.path.exists(os.path.join(HERE, ".env")):
+    for line in open(os.path.join(HERE, ".env")):
+        name, sep, value = line.strip().partition("=")
+        if sep and not name.startswith("#"):
+            os.environ.setdefault(name.strip(), value.strip().strip("\"'"))
+
+KEY = os.environ.get("OPENAI_API_KEY", "")
 assert KEY, "OPENAI_API_KEY is empty"
 # Spend guards: the server, not the page, fixes the model and output cap, and stops after MAX_CALLS.
 MODEL = "gpt-5.6-luna"
@@ -46,5 +55,5 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(data)
 
 
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+os.chdir(HERE)
 http.server.ThreadingHTTPServer(("", 8000), Handler).serve_forever()
