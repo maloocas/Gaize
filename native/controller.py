@@ -160,6 +160,12 @@ class KeyView(AppKit.NSView):
                 | AppKit.NSTrackingInVisibleRect,
                 self, None))
 
+    def acceptsFirstMouse_(self,_event):
+        # Our app is intentionally never active, so without this the click that
+        # would normally just focus the window gets swallowed instead of
+        # pressing the key.
+        return True
+
     def mouseEntered_(self,_event):
         self.hovering=True; self.setNeedsDisplay_(True)
 
@@ -485,11 +491,32 @@ class NativeController(NSObject):
     def handleBlink_(self, timestamp):
         self.register_blink(float(timestamp))
 
+    @objc.python_method
+    def pointer_over_keyboard(self):
+        """True when the pointer sits inside the visible keyboard panel.
+
+        The panel is deliberately non-activating so that the app being typed
+        into keeps keyboard focus. A side effect is that pressing one of our own
+        keys leaves that other app frontmost, so the focus probe still reports
+        it - which makes "the user pressed a key" indistinguishable from "the
+        user clicked a new text field" by focus alone. Geometry can tell them
+        apart, and getting this wrong re-opened the keyboard on every keystroke
+        and wiped the text buffer each time.
+        """
+        if not self.keyboard_visible():
+            return False
+        # Cocoa coordinates on both sides: NSEvent.mouseLocation and NSWindow.frame.
+        return AppKit.NSPointInRect(
+            AppKit.NSEvent.mouseLocation(), self.keyboard_window.frame())
+
     def commitBlink_(self, generation):
         if not self.pending_blink or int(generation)!=self.blink_generation: return
         self.pending_blink=False
         self.flashCrosshair_(None)
+        on_keyboard=self.pointer_over_keyboard()
         target=click(show_keyboard=False)
+        if on_keyboard:
+            return          # the panel's own key handling deals with this click
         if target and int(target["pid"]) != os.getpid(): self.show_keyboard(target)
 
     @objc.python_method
@@ -667,9 +694,16 @@ class NativeController(NSObject):
     def show_keyboard(self, target):
         if self.keyboard_window is None:
             self.build_keyboard()
-        self.keyboard_target=target; self.keyboard_text=""
-        self.keyboard_display.setStringValue_("")
-        self.show_suggestions([])
+        # Only start a new message when this is genuinely a new session: the
+        # keyboard was closed, or focus moved to a different application.
+        previous=self.keyboard_target or {}
+        fresh=(not self.keyboard_visible()
+               or previous.get("pid") != target.get("pid"))
+        self.keyboard_target=target
+        if fresh:
+            self.keyboard_text=""
+            self.keyboard_display.setStringValue_("")
+            self.show_suggestions([])
         self.keyboard_title.setStringValue_(
             f"POINT + BLINK TO TYPE INTO {target['app'].upper()}   ·   ESC TO CLOSE")
         # orderFrontRegardless, never makeKeyAndOrderFront_: the target app must
