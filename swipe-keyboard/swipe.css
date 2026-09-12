@@ -19,9 +19,8 @@
 }
 .swipe-row { display: flex; gap: 1vw; justify-content: center; }
 .swipe-output { font-size: 2.2vh; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 2vh 2.5vw; }
-.swipe-slot { display: flex; flex-direction: column; gap: 0.8vh; }
-.swipe-group { display: flex; flex-direction: column; }
-.swipe-group i { font-size: 1.5vh; font-style: normal; color: #6b7385; }
+.swipe-slot { display: flex; flex-direction: column; gap: 0.3vh; }
+.swipe-slot span:first-child { font-size: 3.2vh; }
 .swipe-keys { display: flex; flex-direction: column; gap: 1.2vh; }
 .swipe-key {
   --dwell: 0;
