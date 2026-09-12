@@ -20,7 +20,7 @@ def test_typing_does_not_restore_stale_clipboard_contents():
 
 
 def test_keyboard_is_pointer_operable_without_physical_typing():
-    assert "POINT + BLINK TO TYPE" in SOURCE
+    assert "LOOK + WINK TO TYPE" in SOURCE
     assert "NSVisualEffectView" in SOURCE
     assert "make_key" in SOURCE
 

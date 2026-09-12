@@ -32,12 +32,26 @@ ACTIONABLE_ACTIONS = {
 CHILD_ATTRIBUTES = ("AXChildren", "AXVisibleChildren", "AXRows", "AXTabs", "AXContents")
 MAX_TARGETS = 250
 MAX_CANDIDATES = 500
-MAX_NODES = 1800
+MAX_NODES = 2500
 MAX_DEPTH = 30
-SCAN_BUDGET_SECONDS = 0.45
+SCAN_BUDGET_SECONDS = 0.5
+# Roles whose frame is a viewport: their contents are only visible inside it.
+CLIP_ROLES = {"AXScrollArea", "AXWebArea"}
+# Window-server owners that are never the app the user is looking at.
+NOT_APPS = {"WindowManager", "Window Server", "Dock", "Control Center",
+            "SystemUIServer", "Notification Center", "Spotlight"}
 SYSTEM_UI_BUNDLE_IDS = {
     "com.apple.controlcenter", "com.apple.dock", "com.apple.systemuiserver",
 }
+
+
+# A busy or hung app otherwise blocks each query for macOS's default ~6s,
+# which left the boxes stale for long stretches after switching windows.
+AX_TIMEOUT_SECONDS = 0.25
+try:
+    AS.AXUIElementSetMessagingTimeout(AS.AXUIElementCreateSystemWide(), AX_TIMEOUT_SECONDS)
+except Exception:
+    pass
 
 
 def _attr(element, name):
@@ -72,8 +86,28 @@ def _actions(element):
         return set()
 
 
+def overlaps(a, b):
+    """Rectangles (x, y, w, h) share any area."""
+    return a[0]<b[0]+b[2] and a[0]+a[2]>b[0] and a[1]<b[1]+b[3] and a[1]+a[3]>b[1]
+
+
+def intersect(a, b):
+    """The overlapping rectangle, or None."""
+    x=max(a[0],b[0]); y=max(a[1],b[1])
+    right=min(a[0]+a[2],b[0]+b[2]); bottom=min(a[1]+a[3],b[1]+b[3])
+    return (x,y,right-x,bottom-y) if right>x and bottom>y else None
+
+
 def _children(element):
-    """Combine the collections used by native, web and virtualized controls."""
+    """Combine the collections used by native, web and virtualized controls.
+
+    Lists and tables that report their visible children/rows are walked
+    through those alone, so off-screen rows are never visited."""
+    for attribute in ("AXVisibleChildren","AXVisibleRows"):
+        values=_attr(element,attribute)
+        if values:
+            try: return list(values)
+            except TypeError: pass
     result=[]; seen=set()
     for attribute in CHILD_ATTRIBUTES:
         values=_attr(element,attribute)
@@ -120,8 +154,10 @@ def _overlap_of_smaller(first,second):
 def deduplicate_targets(targets):
     """Collapse nested AX wrappers that describe the same visual control."""
     kept=[]
-    # Inner/specific controls win over the larger link/group wrapper around it.
-    for target in sorted(targets,key=lambda item:item["width"]*item["height"]):
+    # Real controls first (an icon or label inside a button must not replace
+    # the button); among those, inner/specific controls beat the larger wrapper.
+    for target in sorted(targets,key=lambda item:(item.get("role") not in TARGET_ROLES,
+                                                  item["width"]*item["height"])):
         if any(_overlap_of_smaller(target,other)>=.88 for other in kept):
             continue
         kept.append(target)
@@ -129,7 +165,21 @@ def deduplicate_targets(targets):
     return kept
 
 
+SYSTEM_ROOTS_TTL_SECONDS = 15.0
+_system_roots_cache = {"at": -1e9, "roots": []}
+
+
 def _system_ui_roots(own_pid):
+    """Cached: enumerating every running app and the window list each scan was
+    a large fixed cost, and the Dock/menu extras rarely change."""
+    now=time.monotonic()
+    if now-_system_roots_cache["at"]>SYSTEM_ROOTS_TTL_SECONDS:
+        _system_roots_cache["roots"]=_system_ui_roots_uncached(own_pid)
+        _system_roots_cache["at"]=now
+    return list(_system_roots_cache["roots"])
+
+
+def _system_ui_roots_uncached(own_pid):
     """Accessibility roots for the Dock and right-side menu-bar controls."""
     roots=[]
     # Menu extras are not consistently attributed to SystemUIServer on recent
@@ -162,31 +212,147 @@ def _system_ui_roots(own_pid):
                 continue
             name=str(application.localizedName() or bundle)
             ax=AS.AXUIElementCreateApplication(pid)
-            roots.append((ax,0,pid,name))
-            menu=_attr(ax,"AXMenuBar")
-            if menu is not None: roots.append((menu,0,pid,name))
+            if bundle in SYSTEM_UI_BUNDLE_IDS:
+                roots.append((ax,0,pid,name))
+            # Only the status-bar icons of other apps: walking their whole
+            # tree used to burn the entire scan budget before the window.
+            extras=_attr(ax,"AXExtrasMenuBar")
+            if extras is not None: roots.append((extras,0,pid,name))
         except Exception:
             continue
     return roots
 
 
+def front_window_app(own_pid):
+    """Owner and bounds of the top real app window, skipping our own overlays
+    and system processes (WindowManager was being reported as frontmost)."""
+    try:
+        windows=Quartz.CGWindowListCopyWindowInfo(
+            Quartz.kCGWindowListOptionOnScreenOnly|
+            Quartz.kCGWindowListExcludeDesktopElements,
+            Quartz.kCGNullWindowID) or []
+    except Exception:
+        return None
+    for win in windows:
+        pid=int(win.get("kCGWindowOwnerPID") or 0)
+        name=str(win.get("kCGWindowOwnerName") or "")
+        bounds=win.get("kCGWindowBounds") or {}
+        if (win.get("kCGWindowLayer",1)!=0 or not pid or pid==int(own_pid)
+                or name in NOT_APPS or float(win.get("kCGWindowAlpha",1))<.05
+                or float(bounds.get("Width",0))<80 or float(bounds.get("Height",0))<80):
+            continue
+        return {"pid":pid,"name":name,
+                "bounds":(float(bounds["X"]),float(bounds["Y"]),
+                          float(bounds["Width"]),float(bounds["Height"]))}
+    return None
+
+
+_woken=set()
+
+
+def _wake_accessibility(application, pid):
+    """Electron (Claude, Slack, VS Code) and Chromium browsers expose only
+    their window buttons until asked for the full tree; the tree appears on
+    later scans. Asked once per process."""
+    if pid in _woken: return
+    _woken.add(pid)
+    for name in ("AXManualAccessibility", "AXEnhancedUserInterface"):
+        try: AS.AXUIElementSetAttributeValue(application, name, True)
+        except Exception: pass
+
+
+def _display_bounds():
+    try:
+        error,ids,count=Quartz.CGGetActiveDisplayList(16,None,None)
+        return [(d.origin.x,d.origin.y,d.size.width,d.size.height)
+                for d in (Quartz.CGDisplayBounds(i) for i in ids[:count])]
+    except Exception:
+        return None
+
+
+def _on_a_display(target, displays=None):
+    if displays is None: displays=_display_bounds()
+    if not displays: return True
+    return any(_visible(target,d) for d in displays)
+
+
+def target_signature(targets):
+    """Hashable summary used to skip applying/redrawing an unchanged scan."""
+    return tuple(sorted((round(t["x"]),round(t["y"]),round(t["width"]),round(t["height"]),
+                         t.get("role"),t.get("label"),t.get("pid")) for t in targets or []))
+
+
+# Notifications that mean the visible controls moved or changed.
+OBSERVED_NOTIFICATIONS = (
+    "AXFocusedWindowChanged", "AXMainWindowChanged", "AXWindowMoved",
+    "AXWindowResized", "AXWindowCreated", "AXWindowMiniaturized",
+    "AXUIElementDestroyed", "AXCreated", "AXLayoutChanged",
+    "AXSelectedChildrenChanged", "AXRowCountChanged", "AXSelectedTabChanged",
+)
+
+
+def observe_app(pid, on_change):
+    """Register an AXObserver on pid's application element that calls
+    on_change(notification) on the main run loop. Returns a handle to pass to
+    stop_observing (keep it alive), or None."""
+    def callback(_observer, _element, notification, _refcon):
+        try: on_change(str(notification))
+        except Exception: pass
+    try:
+        error, observer = AS.AXObserverCreate(int(pid), callback, None)
+        if error != AS.kAXErrorSuccess or observer is None: return None
+        application = AS.AXUIElementCreateApplication(int(pid))
+        AS.AXUIElementSetMessagingTimeout(application, AX_TIMEOUT_SECONDS)
+        added = [n for n in OBSERVED_NOTIFICATIONS
+                 if AS.AXObserverAddNotification(observer, application, n, None)
+                 == AS.kAXErrorSuccess]
+        source = AS.AXObserverGetRunLoopSource(observer)
+        Quartz.CFRunLoopAddSource(Quartz.CFRunLoopGetMain(), source, Quartz.kCFRunLoopDefaultMode)
+    except Exception:
+        return None
+    return {"pid": int(pid), "observer": observer, "application": application,
+            "source": source, "callback": callback, "notifications": added}
+
+
+def stop_observing(handle):
+    if not handle: return
+    try:
+        for n in handle["notifications"]:
+            AS.AXObserverRemoveNotification(handle["observer"], handle["application"], n)
+        Quartz.CFRunLoopRemoveSource(Quartz.CFRunLoopGetMain(), handle["source"],
+                                     Quartz.kCFRunLoopDefaultMode)
+    except Exception:
+        pass
+
+
+def _visible(target, bounds):
+    x,y,w,h=bounds
+    return (target["x"]<x+w and target["x"]+target["width"]>x and
+            target["y"]<y+h and target["y"]+target["height"]>y)
+
+
 def discover_targets(own_pid: int | None = None) -> list[dict]:
     """Return bounded boxes for actionable elements in the frontmost window."""
-    app = frontmost_app()
-    if app is None or int(app["pid"]) == int(own_pid or os.getpid()):
+    own_pid=int(own_pid or os.getpid())
+    app = front_window_app(own_pid)
+    if app is None:
         return []
-    application = AS.AXUIElementCreateApplication(int(app["pid"]))
+    application = AS.AXUIElementCreateApplication(app["pid"])
+    try: AS.AXUIElementSetMessagingTimeout(application, AX_TIMEOUT_SECONDS)
+    except Exception: pass
+    _wake_accessibility(application, app["pid"])
     focused = _attr(application, "AXFocusedWindow")
     if focused is None:
         windows = _attr(application, "AXWindows") or []
         focused = windows[0] if windows else application
-    # System controls are shallow and latency-sensitive, so put them ahead of a
-    # potentially enormous browser accessibility tree.
-    roots=_system_ui_roots(own_pid or os.getpid())
-    roots.append((focused,0,int(app["pid"]),str(app["name"])))
+    # The window the user is looking at goes first so it always gets the
+    # budget; the Dock and menu-bar icons follow.
+    # Each queue entry carries the visible rectangle it lives in ("clip").
+    roots=[(focused,0,app["pid"],app["name"],app["bounds"])]
     menu_bar=_attr(application,"AXMenuBar")
     if menu_bar is not None:
-        roots.append((menu_bar,0,int(app["pid"]),str(app["name"])))
+        roots.append((menu_bar,0,app["pid"],app["name"],None))
+    roots.extend(root+(None,) for root in _system_ui_roots(own_pid))
 
     queue = deque(roots)
     targets = []
@@ -195,20 +361,30 @@ def discover_targets(own_pid: int | None = None) -> list[dict]:
     while queue and visited < MAX_NODES and len(targets) < MAX_CANDIDATES:
         if time.monotonic() >= deadline:
             break
-        element, depth, target_pid, target_app = queue.popleft()
+        element, depth, target_pid, target_app, clip = queue.popleft()
         try: identity=hash(element)
         except Exception: identity=id(element)
         if identity in seen_elements: continue
         seen_elements.add(identity); visited += 1
         if visited%25==0:
             time.sleep(.001)  # yield promptly to camera/blink processing
+        position = _point(_attr(element, "AXPosition"))
+        size = _size(_attr(element, "AXSize"))
+        frame=(None if position is None or size is None else
+               (float(position.x),float(position.y),float(size.width),float(size.height)))
+        # Scrolled out of view: skip it AND everything inside it. Walking the
+        # thousands of off-screen messages in a long chat is what lagged the
+        # machine. Zero-sized layout wrappers are not trusted for this.
+        if (clip is not None and frame is not None and frame[2]>0 and frame[3]>0
+                and not overlaps(frame,clip)):
+            continue
         role = _attr(element, "AXRole")
+        if role in CLIP_ROLES and frame is not None and frame[2]>0 and frame[3]>0:
+            clip=frame if clip is None else (intersect(clip,frame) or clip)
         enabled = _attr(element, "AXEnabled")
         known_role=role in TARGET_ROLES
         actions=set() if known_role else _actions(element) & ACTIONABLE_ACTIONS
         if (known_role or actions) and enabled is not False:
-            position = _point(_attr(element, "AXPosition"))
-            size = _size(_attr(element, "AXSize"))
             # Generic groups/rows sometimes advertise AXPress for an enormous
             # content region. Keep a custom-role target only when it is named
             # and plausibly sized like a control.
@@ -220,7 +396,8 @@ def discover_targets(own_pid: int | None = None) -> list[dict]:
                     5 <= size.width <= 2400 and 5 <= size.height <= 1600):
                 box=(round(float(position.x),1),round(float(position.y),1),
                      round(float(size.width),1),round(float(size.height),1))
-                if box not in seen_boxes:
+                offscreen=clip is not None and not overlaps(box,clip)
+                if box not in seen_boxes and not offscreen:   # scrolled out of view
                     seen_boxes.add(box)
                     role_name=str(role or "AXAction")
                     targets.append({
@@ -231,6 +408,8 @@ def discover_targets(own_pid: int | None = None) -> list[dict]:
                         "pid": target_pid, "app": target_app,
                     })
         if depth < MAX_DEPTH:
-            queue.extend((child,depth+1,target_pid,target_app)
+            queue.extend((child,depth+1,target_pid,target_app,clip)
                          for child in _children(element))
-    return deduplicate_targets(targets)
+    # An auto-hidden Dock still reports its items, just off the screen edge.
+    displays=_display_bounds()
+    return deduplicate_targets([t for t in targets if _on_a_display(t,displays)])
