@@ -80,6 +80,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sensing.onConfirmed = { [weak self] element, axElement in
             guard let self else { return }
             let key = KnowledgePack.matchedEntry(for: element)?.key
+            // Say what was just pressed on every click, whether or not it's
+            // the lesson's current step - the user is hands-free and often
+            // not reading the screen, so an unannounced click is invisible
+            // to them. Only the tutorial bookkeeping below is gated.
+            self.output.speakConfirmation(for: element)
             guard self.matchesHighlightedTarget(element, key: key) else {
                 print("AppDelegate: ignoring unrelated click on \(element.title.isEmpty ? element.role : element.title), current target=\(self.highlightedTarget ?? "none")")
                 return
@@ -88,7 +93,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // request the next target after it processes action_completed.
             self.overlay.clear()
             self.bridge.send(event: "action_completed", element: element, key: key)
-            self.output.speakConfirmation(for: element)
             print("AppDelegate: confirmed key=\(key ?? "nil") showKeyboardOnCompose=\(self.showKeyboardOnCompose)")
 
             if key == "compose", self.showKeyboardOnCompose {

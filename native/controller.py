@@ -19,6 +19,7 @@ import os
 import json
 from pathlib import Path
 import statistics
+import subprocess
 import threading
 import time
 
@@ -37,6 +38,52 @@ from llm import decode_sentence, fallback
 from snapping import SNAP_RADIUS, candidates, center, pick, to_zoom, zoom_dest, zoom_region
 from swipe_decoder import SwipeDecoder
 from swipe_session import SwipeSession
+
+
+# ------------------------------------------------------------------- speech
+
+# A gesture click is silent and the pointer is small, so without this the user
+# has no way to know what they just pressed - which is exactly the thing this
+# project exists to fix. macOS `say` is used rather than a PyObjC synthesizer
+# so an utterance can never block the 60Hz pointer loop: each one is a
+# detached process. Samantha matches the voice the Gaize companion app speaks
+# with (companion/Sources/GaizeCompanion/Output.swift).
+SPEECH_VOICE = os.environ.get("OPENGAZE_VOICE", "Samantha")
+
+_speech_voice = None
+_speech_process = None
+
+
+def click_phrase(label) -> str:
+    """What to say when a click fires.
+
+    Never "clicking": the companion app treats "click" as a select command,
+    so a phrase containing it comes back through the mic as a command.
+    """
+    name = " ".join(str(label or "").split())
+    return f"Pressing {name}." if name else "Pressing this."
+
+
+def speak(text: str) -> None:
+    """Say `text`, cutting off whatever was still being said."""
+    global _speech_voice, _speech_process
+    if _speech_voice is None:
+        try:
+            listed = subprocess.run(["say", "-v", "?"], capture_output=True,
+                                    text=True, timeout=5).stdout
+        except (OSError, subprocess.SubprocessError):
+            listed = ""
+        # An uninstalled voice makes `say` exit without speaking at all, so
+        # fall back to the system default rather than going silent.
+        _speech_voice = SPEECH_VOICE if any(
+            line.startswith(SPEECH_VOICE) for line in listed.splitlines()) else ""
+    if _speech_process is not None and _speech_process.poll() is None:
+        _speech_process.terminate()
+    command = ["say"] + (["-v", _speech_voice] if _speech_voice else []) + [text]
+    try:
+        _speech_process = subprocess.Popen(command)
+    except OSError as exc:
+        print(f"[OpenGaze] speech unavailable: {exc}", flush=True)
 
 
 # One shared HID-state event source for every synthetic mouse event.
@@ -1453,6 +1500,9 @@ class NativeController(NSObject):
             self.select_near_gaze()
         elif gesture in ("wink_left","wink_right"):
             target=self.selected_target
+            # Announced before the click, so the user hears what is about to
+            # happen while the target app is still reacting to it.
+            speak(click_phrase(target.get("label") if target else None))
             if target is not None:
                 self.clear_selection()
                 move_pointer(*center(target))

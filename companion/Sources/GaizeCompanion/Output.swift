@@ -19,6 +19,16 @@ final class Output: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate
 
     private static let liveServerURL = URL(string: "http://127.0.0.1:8766/speak")!
 
+    /// The Chatterbox tiers (1 and 2) are off: both render a male-sounding
+    /// voice, where the system voice below is the female one this app used
+    /// before Chatterbox landed. Tier 2 is also a liability now that we
+    /// speak on every click - it blocks on a 6s HTTP timeout when the
+    /// server isn't running, and port 8766 is claimed by native/bridge.py
+    /// anyway. Flip this back to true once the clips in Resources/audio are
+    /// regenerated with a female speaker (chatterbox/generate_gaize_audio.py,
+    /// via an audio_prompt_path reference clip).
+    private static let useChatterboxVoice = false
+
     private var speakingSince: Date?
     private var lastText: String?
     private var lastTextValidUntil = Date.distantPast
@@ -63,7 +73,8 @@ final class Output: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate
 
     func speakExplanation(for element: SensedElement) {
         let text = KnowledgePack.explanation(for: element)
-        if let entry = KnowledgePack.matchedEntry(for: element),
+        if Self.useChatterboxVoice,
+           let entry = KnowledgePack.matchedEntry(for: element),
            playPreRendered(key: entry.key, text: text) {
             return
         }
@@ -110,7 +121,8 @@ final class Output: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate
 
     func speak(_ text: String) {
         beginSpeaking(text)
-        guard AppSettings.shared.language == .english else {
+        // The live server only ever covered English.
+        guard Self.useChatterboxVoice, AppSettings.shared.language == .english else {
             speakSystemVoice(text)
             return
         }
@@ -165,20 +177,32 @@ final class Output: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate
         }
     }
 
-    /// Prefer an installed Premium, then Enhanced voice over the default
-    /// compact one (downloaded via System Settings > Accessibility >
-    /// Spoken Content).
+    /// Prefer a female voice, then the highest quality available: Premium,
+    /// then Enhanced, then the default compact one (better voices are
+    /// downloaded via System Settings > Accessibility > Spoken Content).
+    ///
+    /// Gender comes first on purpose. Ranking on quality alone picked a male
+    /// Premium voice over a female compact one wherever both are installed,
+    /// and for fr-FR the *default* voice is male (Thomas) - so Gaize changed
+    /// gender depending on the language and on what the Mac happened to have
+    /// installed. en-US falls to Samantha here, which is the voice this app
+    /// shipped with originally.
     private static var cachedVoices: [AppLanguage: AVSpeechSynthesisVoice] = [:]
 
     private static func bestVoice(for language: AppLanguage) -> AVSpeechSynthesisVoice? {
         if let cached = cachedVoices[language] { return cached }
 
         let matching = AVSpeechSynthesisVoice.speechVoices().filter { $0.language == language.rawValue }
-        let chosen = matching.first(where: { $0.quality == .premium })
+        let female = matching.filter { $0.gender == .female }
+        let chosen = female.first(where: { $0.quality == .premium })
+            ?? female.first(where: { $0.quality == .enhanced })
+            ?? female.first
+            ?? matching.first(where: { $0.quality == .premium })
             ?? matching.first(where: { $0.quality == .enhanced })
             ?? AVSpeechSynthesisVoice(language: language.rawValue)
 
         if let chosen {
+            print("Output: using voice \"\(chosen.name)\" (quality \(chosen.quality.rawValue)) for \(language.rawValue)")
             cachedVoices[language] = chosen
         }
         return chosen
