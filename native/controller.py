@@ -33,6 +33,23 @@ EVENT_SOURCE = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemSta
 
 KEY_RADIUS = 12.0
 
+
+def quartz_cursor():
+    """Current pointer position in QUARTZ coordinates (origin top-left).
+
+    macOS has two conflicting conventions and mixing them is invisible until it
+    is catastrophic: NSEvent.mouseLocation() is Cocoa (origin BOTTOM-left, y up)
+    while CGEventCreateMouseEvent interprets its point as Quartz (origin
+    TOP-left, y down). Feeding a Cocoa point to a CGEvent mirrors it vertically
+    - on a 982pt display a click near the top landed 682pt away near the bottom,
+    dragging whatever was grabbed to the wrong end of the screen and leaving the
+    drawn reticle and the real cursor in two different places.
+
+    Anything posted as a CGEvent must use this. Anything positioning an NSWindow
+    must use NSEvent.mouseLocation() instead.
+    """
+    return Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
+
 TARGETS = ((.08,.08),(.5,.08),(.92,.08),(.08,.5),(.5,.5),(.92,.5),(.08,.92),(.5,.92),(.92,.92))
 PID_FILE = Path("/private/tmp/opengaze.pid")
 SWIPE_WORDS = Path(__file__).with_name("swipe_words.txt")
@@ -265,7 +282,7 @@ class NativeController(NSObject):
         self.calib_samples=[]; self.calibration=None; self.target_index=0
         self.open_ears=collections.deque(maxlen=120); self.closed_frames=0
         self.closed_since=0.0; self.last_blink=0.0; self.smooth=[.5,.5]
-        self.click_flash_until=0.0; self.drag_mode=False
+        self.click_flash_until=0.0; self.drag_mode=False; self.last_drag_point=None
         self.pending_blink=False; self.pending_blink_at=0.0; self.blink_generation=0
         self.keyboard_window=None; self.keyboard_display=None
         self.keyboard_title=None; self.suggestion_row_y=0.0
@@ -398,7 +415,29 @@ class NativeController(NSObject):
         )
         self.status_item.button().setTitle_("⚠ Blink Click · camera blocked")
 
+    @objc.python_method
+    def release_drag(self):
+        """Make sure we never leave the mouse button held down.
+
+        Drag mode holds a synthetic button press across many event loop turns.
+        If the process exits while that press is outstanding, the button stays
+        down for the whole system and the machine is effectively unusable - and
+        the person this is built for cannot reach a physical mouse to clear it.
+        """
+        if not getattr(self,"drag_mode",False):
+            return
+        self.drag_mode=False
+        try:
+            where=quartz_cursor()
+            Quartz.CGEventPost(Quartz.kCGHIDEventTap,
+                Quartz.CGEventCreateMouseEvent(
+                    EVENT_SOURCE,Quartz.kCGEventLeftMouseUp,
+                    where,Quartz.kCGMouseButtonLeft))
+        except Exception:
+            pass
+
     def quit_(self, _sender):
+        self.release_drag()
         self.running=False; self.control_enabled=False
         AppKit.NSApp.terminate_(None)
 
@@ -413,12 +452,19 @@ class NativeController(NSObject):
             if self.swipe_trace_view is not None:
                 self.swipe_trace_view.setNeedsDisplay_(True)
         elif self.drag_mode:
-            drag=Quartz.CGEventCreateMouseEvent(
-                EVENT_SOURCE,Quartz.kCGEventLeftMouseDragged,
-                point,Quartz.kCGMouseButtonLeft)
-            Quartz.CGEventSetIntegerValueField(
-                drag,Quartz.kCGMouseEventButtonNumber,Quartz.kCGMouseButtonLeft)
-            Quartz.CGEventPost(Quartz.kCGHIDEventTap,drag)
+            # Quartz space, never the Cocoa point used for the reticle above.
+            where=quartz_cursor()
+            moved=(self.last_drag_point is None
+                   or abs(where.x-self.last_drag_point[0])>0.5
+                   or abs(where.y-self.last_drag_point[1])>0.5)
+            if moved:
+                self.last_drag_point=(where.x,where.y)
+                drag=Quartz.CGEventCreateMouseEvent(
+                    EVENT_SOURCE,Quartz.kCGEventLeftMouseDragged,
+                    where,Quartz.kCGMouseButtonLeft)
+                Quartz.CGEventSetIntegerValueField(
+                    drag,Quartz.kCGMouseEventButtonNumber,Quartz.kCGMouseButtonLeft)
+                Quartz.CGEventPost(Quartz.kCGHIDEventTap,drag)
         self.crosshair_view.setNeedsDisplay_(True)
 
     def flashCrosshair_(self, _sender):
@@ -472,7 +518,8 @@ class NativeController(NSObject):
                     self.swipe_trace_view.setNeedsDisplay_(True)
             self.crosshair_view.setNeedsDisplay_(True)
             return
-        point=Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
+        point=quartz_cursor()
+        self.last_drag_point=(point.x,point.y)
         if self.drag_mode:
             kind=Quartz.kCGEventLeftMouseUp; self.drag_mode=False
             self.status_item.button().setTitle_("● Blink Click · active")
@@ -738,4 +785,5 @@ if __name__ == "__main__":
     controller=NativeController.alloc().init()
     PID_FILE.write_text(str(os.getpid()))
     atexit.register(lambda: PID_FILE.unlink(missing_ok=True))
+    atexit.register(controller.release_drag)
     app.run()
