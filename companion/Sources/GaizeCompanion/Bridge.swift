@@ -10,6 +10,9 @@ final class Bridge {
 
     var onHighlightRequest: ((String) -> Void)?
     var onSetLanguage: ((String) -> Void)?
+    /// Debug-only: triggers the same thing "explain" (the voice command)
+    /// does, for testing without needing to actually speak.
+    var onDebugExplain: (() -> Void)?
 
     private var listener: NWListener?
     private var connections: [NWConnection] = []
@@ -77,6 +80,10 @@ final class Bridge {
             guard let language = json["language"] as? String else { return }
             DispatchQueue.main.async { [weak self] in
                 self?.onSetLanguage?(language)
+            }
+        case "debug_explain":
+            DispatchQueue.main.async { [weak self] in
+                self?.onDebugExplain?()
             }
         default:
             break
