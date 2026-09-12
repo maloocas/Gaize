@@ -10,7 +10,9 @@ const GOALS = [
     title: "Send a message",
     steps: [
       { target: "compose", instruction: "Look at the compose button to start a new conversation" },
-      { target: "send", instruction: "Look at the send button once you've typed a message" },
+      { target: "to:", instruction: "Say the recipient's name, or type it into the To field" },
+      { target: "message", instruction: "Type your message" },
+      { target: "send", instruction: "Look at the send button to send it" },
     ],
     quiz: [
       {
@@ -19,14 +21,19 @@ const GOALS = [
         correct: "Compose",
       },
       {
+        question: "Where do you put the name of who you're messaging?",
+        options: ["The To field", "The Message field", "Search", "Details"],
+        correct: "The To field",
+      },
+      {
         question: "Which button actually sends your typed message?",
         options: ["Attach", "Send", "Camera", "Back"],
         correct: "Send",
       },
     ],
     scenario: {
-      instruction: "Start a new conversation, then send a message.",
-      expectedTargets: ["compose", "send"],
+      instruction: "Start a new conversation, add a recipient, write a message, and send it.",
+      expectedTargets: ["compose", "to:", "message", "send"],
     },
   },
   {
@@ -34,6 +41,8 @@ const GOALS = [
     title: "Add an attachment",
     steps: [
       { target: "attach", instruction: "Look at the attach button to add a photo or file" },
+      { target: "photos", instruction: "Look at Photos to pick one from your library" },
+      { target: "send", instruction: "Look at the send button to send it" },
     ],
     quiz: [
       {
@@ -41,17 +50,22 @@ const GOALS = [
         options: ["Emoji", "Attach", "App Store", "Details"],
         correct: "Attach",
       },
+      {
+        question: "After tapping Attach, which option picks a photo from your library?",
+        options: ["Photos", "Stickers", "Genmoji", "Filter"],
+        correct: "Photos",
+      },
     ],
     scenario: {
-      instruction: "Attach a photo to your message.",
-      expectedTargets: ["attach"],
+      instruction: "Attach a photo to your message and send it.",
+      expectedTargets: ["attach", "photos", "send"],
     },
   },
   {
     id: "search-a-conversation",
     title: "Search your messages",
     steps: [
-      { target: "search", instruction: "Look at the search field to find a conversation" },
+      { target: "search", instruction: "Look at the search field, then say or type a name" },
     ],
     quiz: [
       {
@@ -88,6 +102,7 @@ const GOALS = [
     title: "Add an emoji",
     steps: [
       { target: "emoji", instruction: "Look at the emoji button to add one to your message" },
+      { target: "send", instruction: "Look at the send button to send it" },
     ],
     quiz: [
       {
@@ -97,8 +112,8 @@ const GOALS = [
       },
     ],
     scenario: {
-      instruction: "Add an emoji to your message.",
-      expectedTargets: ["emoji"],
+      instruction: "Add an emoji to your message and send it.",
+      expectedTargets: ["emoji", "send"],
     },
   },
   {
@@ -123,7 +138,8 @@ const GOALS = [
     id: "send-a-photo",
     title: "Send a photo",
     steps: [
-      { target: "photos", instruction: "Look at Photos to send one from your library" },
+      { target: "photos", instruction: "Look at Photos to pick one from your library" },
+      { target: "send", instruction: "Look at the send button to send it" },
     ],
     quiz: [
       {
@@ -134,14 +150,15 @@ const GOALS = [
     ],
     scenario: {
       instruction: "Send a photo from your library.",
-      expectedTargets: ["photos"],
+      expectedTargets: ["photos", "send"],
     },
   },
   {
     id: "send-a-sticker",
     title: "Send a sticker",
     steps: [
-      { target: "stickers", instruction: "Look at Stickers to send one in your message" },
+      { target: "stickers", instruction: "Look at Stickers to pick one" },
+      { target: "send", instruction: "Look at the send button to send it" },
     ],
     quiz: [
       {
@@ -152,14 +169,15 @@ const GOALS = [
     ],
     scenario: {
       instruction: "Send a sticker.",
-      expectedTargets: ["stickers"],
+      expectedTargets: ["stickers", "send"],
     },
   },
   {
     id: "create-a-poll",
     title: "Create a poll",
     steps: [
-      { target: "polls", instruction: "Look at Polls to create one for the group to vote on" },
+      { target: "polls", instruction: "Look at Polls to set one up" },
+      { target: "send", instruction: "Look at the send button to send it" },
     ],
     quiz: [
       {
@@ -169,15 +187,16 @@ const GOALS = [
       },
     ],
     scenario: {
-      instruction: "Create a poll.",
-      expectedTargets: ["polls"],
+      instruction: "Create a poll and send it.",
+      expectedTargets: ["polls", "send"],
     },
   },
   {
     id: "schedule-a-message",
     title: "Schedule a message",
     steps: [
-      { target: "send later", instruction: "Look at Send Later to schedule your message" },
+      { target: "message", instruction: "Type your message" },
+      { target: "send later", instruction: "Look at Send Later to schedule it instead of sending now" },
     ],
     quiz: [
       {
@@ -187,15 +206,16 @@ const GOALS = [
       },
     ],
     scenario: {
-      instruction: "Schedule a message to send later.",
-      expectedTargets: ["send later"],
+      instruction: "Write a message and schedule it to send later.",
+      expectedTargets: ["message", "send later"],
     },
   },
   {
     id: "create-a-genmoji",
     title: "Create a Genmoji",
     steps: [
-      { target: "genmoji", instruction: "Look at Genmoji to create a custom emoji" },
+      { target: "genmoji", instruction: "Look at Genmoji to describe one" },
+      { target: "send", instruction: "Look at the send button to send it" },
     ],
     quiz: [
       {
@@ -205,15 +225,16 @@ const GOALS = [
       },
     ],
     scenario: {
-      instruction: "Create a Genmoji.",
-      expectedTargets: ["genmoji"],
+      instruction: "Create a Genmoji and send it.",
+      expectedTargets: ["genmoji", "send"],
     },
   },
   {
     id: "generate-an-image",
     title: "Generate an image",
     steps: [
-      { target: "image playground", instruction: "Look at Image Playground to generate an image" },
+      { target: "image playground", instruction: "Look at Image Playground to generate one" },
+      { target: "send", instruction: "Look at the send button to send it" },
     ],
     quiz: [
       {
@@ -223,15 +244,16 @@ const GOALS = [
       },
     ],
     scenario: {
-      instruction: "Generate an image to send.",
-      expectedTargets: ["image playground"],
+      instruction: "Generate an image and send it.",
+      expectedTargets: ["image playground", "send"],
     },
   },
   {
     id: "search-the-web-for-images",
     title: "Search the web for images",
     steps: [
-      { target: "#images", instruction: "Look at #images to search the web for one to send" },
+      { target: "#images", instruction: "Look at #images and say or type what you're looking for" },
+      { target: "send", instruction: "Look at the send button to send it" },
     ],
     quiz: [
       {
@@ -241,15 +263,16 @@ const GOALS = [
       },
     ],
     scenario: {
-      instruction: "Search the web for an image.",
-      expectedTargets: ["#images"],
+      instruction: "Search the web for an image and send it.",
+      expectedTargets: ["#images", "send"],
     },
   },
   {
     id: "add-a-message-effect",
     title: "Add a message effect",
     steps: [
-      { target: "message effects", instruction: "Look at Message Effects to add a fun effect" },
+      { target: "message effects", instruction: "Look at Message Effects to pick one" },
+      { target: "send", instruction: "Look at the send button to send it" },
     ],
     quiz: [
       {
@@ -259,8 +282,8 @@ const GOALS = [
       },
     ],
     scenario: {
-      instruction: "Add a message effect.",
-      expectedTargets: ["message effects"],
+      instruction: "Add a message effect and send it.",
+      expectedTargets: ["message effects", "send"],
     },
   },
 ];
