@@ -360,15 +360,34 @@ final class Sensing {
         for window in windows {
             if let found = findElement(in: window, matching: description, depth: 0) {
                 AXUIElementSetAttributeValue(found.element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+                // Setting AX focus alone doesn't move the caret in Messages
+                // (verified: it stayed in To: after the recipient was
+                // accepted) - clicking the field does.
+                let frame = found.sensed.frame
+                if frame.width > 0, frame.height > 0 {
+                    synthesizeClick(at: CGPoint(x: frame.midX, y: frame.midY))
+                }
                 return found.element
             }
         }
         return nil
     }
 
-    /// Messages' To: field, if Messages is in front and that field has
-    /// keyboard focus - i.e. the user is starting a new message, however
-    /// they got there (compose button, Cmd+N, a click).
+    /// Clicks the center of `element` - the only reliable way to put the
+    /// caret into a Messages (Catalyst) text field. Setting AX focus doesn't
+    /// move it, so dictated text kept landing wherever the caret already was
+    /// (verified: a contact name ended up in the message body, To: empty).
+    func click(_ element: AXUIElement) {
+        guard let frame = describe(element)?.frame, frame.width > 0, frame.height > 0 else { return }
+        synthesizeClick(at: CGPoint(x: frame.midX, y: frame.midY))
+    }
+
+    /// Messages' empty To: field, if Messages is in front and a new message
+    /// is open - i.e. the user is starting a new message, however they got
+    /// there (compose button, Cmd+N, a click). Doesn't require the field to
+    /// have keyboard focus: it often loses its caret (the on-screen
+    /// keyboard, a stray click), and requiring focus made saying a name do
+    /// nothing. Dictation focuses it before typing anyway.
     func focusedRecipientField() -> AXUIElement? {
         guard AXIsProcessTrusted(),
               let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
@@ -379,14 +398,36 @@ final class Sensing {
 
         let app = AXUIElementCreateApplication(messages.processIdentifier)
         AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+
+        // Empty = no recipient yet, so a finished message's To: field
+        // doesn't keep swallowing speech.
+        func isEmptyRecipientField(_ element: AXUIElement) -> Bool {
+            let title = (stringAttribute(element, kAXTitleAttribute as CFString)
+                ?? stringAttribute(element, kAXDescriptionAttribute as CFString) ?? "").lowercased()
+            let value = (stringAttribute(element, kAXValueAttribute as CFString) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            // Unfocused, the empty field reports its own label ("To:") as
+            // its value - that still means no recipient.
+            return title == "to:" && (value.isEmpty || value.lowercased() == "to:")
+        }
+
         var ref: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &ref) == .success,
-              let raw = ref else { return nil }
-        let element = raw as! AXUIElement
-        let title = stringAttribute(element, kAXTitleAttribute as CFString)
-            ?? stringAttribute(element, kAXDescriptionAttribute as CFString)
-            ?? ""
-        return title.lowercased() == "to:" ? element : nil
+        if AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &ref) == .success,
+           let raw = ref, isEmptyRecipientField(raw as! AXUIElement) {
+            return (raw as! AXUIElement)
+        }
+
+        var windowsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+              let windows = windowsRef as? [AXUIElement] else { return nil }
+        for window in windows {
+            if let found = findElement(in: window, matching: "to:", depth: 0, exact: true) {
+                if isEmptyRecipientField(found.element) { return found.element }
+                print("Sensing: To: field found but not empty (value=\(stringAttribute(found.element, kAXValueAttribute as CFString) ?? "nil"))")
+            }
+        }
+        print("Sensing: no empty To: field in \(windows.count) window(s)")
+        return nil
     }
 
     private func stringAttribute(_ element: AXUIElement, _ attribute: CFString) -> String? {
