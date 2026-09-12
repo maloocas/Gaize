@@ -163,6 +163,12 @@ def _focused_editable() -> dict | None:
     app = NSWorkspace.sharedWorkspace().frontmostApplication()
     if app is None:
         return None
+    # Blink-clicking an on-screen key must not interpret the keyboard's own
+    # preview entry as a new target and recursively replace the keyboard.
+    with _keyboard_lock:
+        if (_keyboard_process is not None and _keyboard_process.poll() is None
+                and int(app.processIdentifier()) == _keyboard_process.pid):
+            return None
     ax_app = AS.AXUIElementCreateApplication(app.processIdentifier())
     focused = _attr(ax_app, "AXFocusedUIElement")
     if focused is None:
