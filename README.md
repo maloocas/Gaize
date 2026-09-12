@@ -51,15 +51,20 @@ cd ~/aac-accelerator && ./run.sh
 Then open http://localhost:8000. Press <kbd>Space</kbd> to start scanning;
 <kbd>Space</kbd> is the switch.
 
-For whole-computer control on macOS, use the local launcher from the project directory:
+For whole-computer control on macOS, use the native launcher from the project directory:
 
 ```bash
 python3 native/start.py
 ```
 
-It starts both the web app and the bridge, then opens `http://localhost:8000`.
-Use that local page for system control: browsers may prevent the public Vercel
-page from accessing a service on your Mac. Existing healthy processes are reused.
+It opens a native calibration window and then runs in the background—no browser
+is involved. Follow all nine calibration dots; the measured left, center, right,
+top, and bottom eye positions are expanded to the full Mac screen. Look to move
+the pointer and blink to click in Notes or any other application. Clicking an
+editable field opens the large native keyboard. Press Escape three times to stop.
+
+On first launch, macOS may request Camera, Accessibility, and Input Monitoring
+permission for Terminal. Grant them in System Settings, then restart the command.
 
 The bridge listens on `127.0.0.1:8766` (port `8765` was retired to avoid a
 collision with older bridge processes).

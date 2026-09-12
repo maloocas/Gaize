@@ -1,0 +1,4 @@
+opencv-python-headless>=4.10,<5
+pyobjc-framework-Cocoa>=12,<13
+pyobjc-framework-Quartz>=12,<13
+pyobjc-framework-Vision>=12,<13
