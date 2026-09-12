@@ -1,10 +1,17 @@
 from pathlib import Path
 import sys
 
+import pytest
 
 ROOT=Path(__file__).parents[1]
 sys.path.insert(0,str(ROOT/"native"))
-import accessibility_targets as T
+
+# accessibility_targets imports ApplicationServices, which only exists in the
+# native venv. Without this guard the missing module is a collection ERROR that
+# aborts the whole suite, so none of the pure-Python tests run either.
+pytest.importorskip("ApplicationServices")
+
+import accessibility_targets as T  # noqa: E402
 
 
 class _Point:

@@ -9,3 +9,7 @@ data/sessions.jsonl
 .DS_Store
 .vercel
 .env*
+
+# Upstream Gaize clone, vendored locally for reference. It is its own git
+# repo, so committing it would only store an unresolvable gitlink.
+Gaize/
