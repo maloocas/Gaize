@@ -34,19 +34,23 @@ enum AppLanguage: String, CaseIterable {
         }
     }
 
+    /// "Gaize" is not a real word, so on-device speech recognition
+    /// transcribes it inconsistently (observed: "gay" for "Gaize" said
+    /// alone before "open") - these variants cover the common mishearings
+    /// rather than relying on one exact spelling.
     var openWebsiteKeywords: [String] {
         switch self {
         case .english: return [
             "open website", "open the website", "show website", "open goals", "show goals",
-            "gaize open", "gaize, open", "hey gaize open", "hey gaize, open",
+            "gaize open", "gaze open", "gay open", "days open", "guys open", "case open",
         ]
         case .spanish: return [
             "abrir sitio web", "abrir el sitio web", "mostrar objetivos",
-            "gaize abre", "gaize, abre", "oye gaize abre",
+            "gaize abre", "gay abre", "gase abre",
         ]
         case .french: return [
             "ouvrir le site", "ouvrir le site web", "afficher les objectifs",
-            "gaize ouvre", "gaize, ouvre", "hé gaize ouvre",
+            "gaize ouvre", "gay ouvre", "gaz ouvre",
         ]
         }
     }

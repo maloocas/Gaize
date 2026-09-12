@@ -26,6 +26,15 @@ final class VoiceCommands {
     private var lastHandledSegmentCount = 0
     private var isAuthorized = false
 
+    /// On-device speech recognition finalizes a result (and this app then
+    /// restarts the recognizer) after almost any short pause - often after
+    /// a single word - so a multi-word phrase like "open website" can land
+    /// as two separate, isolated results. Keeping a short rolling window of
+    /// recently heard text (instead of only ever looking at one result at a
+    /// time) lets phrase matching span those restarts.
+    private var recentTranscript: [(text: String, at: Date)] = []
+    private let recentTranscriptWindow: TimeInterval = 4.0
+
     func start() {
         SFSpeechRecognizer.requestAuthorization { [weak self] authStatus in
             guard authStatus == .authorized else {
@@ -108,18 +117,27 @@ final class VoiceCommands {
             .joined(separator: " ")
         lastHandledSegmentCount = segments.count
 
+        print("VoiceCommands: heard \"\(newWords)\"")
+
         if isMuted?() == true {
             print("VoiceCommands: muted (Output is speaking), ignoring \"\(newWords)\"")
             return
         }
 
+        let now = Date()
+        recentTranscript.append((newWords, now))
+        recentTranscript.removeAll { now.timeIntervalSince($0.at) > recentTranscriptWindow }
+        let recentText = recentTranscript.map(\.text).joined(separator: " ")
+
         let language = AppSettings.shared.language
 
-        if language.openWebsiteKeywords.contains(where: newWords.contains) {
+        if language.openWebsiteKeywords.contains(where: recentText.contains) {
+            recentTranscript.removeAll()
             onOpenWebsiteCommand?()
         } else if language.selectKeywords.contains(where: newWords.contains) {
             onSelectCommand?()
-        } else if language.explainKeywords.contains(where: newWords.contains) {
+        } else if language.explainKeywords.contains(where: recentText.contains) {
+            recentTranscript.removeAll()
             onExplainCommand?()
         }
     }
