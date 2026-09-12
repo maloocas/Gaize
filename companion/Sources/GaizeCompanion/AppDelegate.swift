@@ -63,8 +63,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.sensing.explainCurrentElement()
         }
 
-        voiceCommands.onOpenWebsiteCommand = {
+        voiceCommands.onOpenWebsiteCommand = { [weak self] in
             print("AppDelegate: opening website at \(AppDelegate.websiteURL)")
+            self?.output.speak("Opening Gaize.")
             // Explicitly activate the browser once it opens the page - a
             // plain NSWorkspace.open can leave it opened but backgrounded
             // (e.g. if a matching tab already existed), which isn't "go
