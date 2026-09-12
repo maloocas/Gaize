@@ -544,6 +544,15 @@ final class VoiceCommands {
     /// pause-separated phrase so earlier assistant speech is never copied.
     private func dictationCandidate(_ segments: [String]) -> String? {
         guard dictationStartIndex < segments.count else { return nil }
+        // Nothing types while Output is actively speaking. Without this,
+        // dictation only ever filtered out individual echoed words
+        // (pendingWordsWithoutEcho / isEchoWord below), which is best-effort:
+        // recognition noise on our own TTS coming back through the speakers
+        // can produce a word that doesn't closely match anything Output
+        // just said, and that word would then get typed. A hard mute here
+        // is a real guarantee that what Gaize says can never end up typed
+        // into the user's own field, not just a fuzzy filter on top of one.
+        guard isMuted?() != true else { return nil }
         let recipient = isRecipientPending?() == true
         guard recipient || isDictationModeActive?() == true else { return nil }
 
@@ -609,6 +618,11 @@ final class VoiceCommands {
         let delay = isRecipientPending?() == true ? recipientSilence : messageSilence
         let work = DispatchWorkItem { [weak self] in
             guard let self, self.lastSegments.count == wordCount else { return }
+            // Re-checked here, not only when this was scheduled: Output can
+            // start speaking (a hover explanation, a confirmation) in the
+            // 0.8-1s gap between scheduling this and it actually firing,
+            // and the text was already decided before that happened.
+            guard self.isMuted?() != true else { return }
             self.fireDictation(text, upTo: wordCount)
         }
         pendingDictation = work
