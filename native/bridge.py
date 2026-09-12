@@ -378,6 +378,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin",
                          origin if origin in ALLOWED_ORIGINS else LOCAL_ORIGINS[0])
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        # A secure Vercel page calling a loopback service is a Private Network
+        # Access request. Without this acknowledgement Chromium blocks the POST
+        # during preflight, so the pairing code never reaches /arm.
+        if self.headers.get("Access-Control-Request-Private-Network") == "true":
+            self.send_header("Access-Control-Allow-Private-Network", "true")
         self.send_header("Cache-Control", "no-store")
 
     def log_message(self, fmt, *args):

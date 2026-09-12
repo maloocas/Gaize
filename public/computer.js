@@ -19,9 +19,21 @@ function say(text) {
 }
 
 async function bridge(path, body = {}) {
-  const res = await fetch(`http://127.0.0.1:8766/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  if (!res.ok) throw new Error("bridge unavailable");
-  return res.json();
+  let res;
+  try {
+    res = await fetch(`http://127.0.0.1:8766/${path}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    throw new Error("Browser could not reach the local bridge. Restart native/bridge.py, then allow Local Network access if your browser asks.", { cause: error });
+  }
+  let data = {};
+  try { data = await res.json(); } catch { /* preserve the HTTP error below */ }
+  if (!res.ok) throw new Error(data.error === "bad pairing code"
+    ? "That pairing code does not match the currently running bridge. Use the newest code printed in its terminal."
+    : (data.error || `Bridge request failed (${res.status})`));
+  return data;
 }
 
 async function connectBridge() {
@@ -32,7 +44,7 @@ async function connectBridge() {
     $("bridgeLabel").textContent = "macOS control connected";
     $("trackingLabel").textContent = "Whole computer ready";
     $("bridgeConnect").textContent = controlArmed ? "Connected and armed ✓" : "Bridge found — control stopped";
-  } catch {
+  } catch (error) {
     bridgeOnline = false;
     $("bridgeLabel").textContent = "Browser mode · start native/bridge.py for macOS";
     $("bridgeConnect").textContent = "Try again";
@@ -65,10 +77,10 @@ async function startSystemControl() {
     $("bridgeLabel").textContent = "Blink clicks · keyboard is automatic";
     statusEl.textContent = "Active. Leave this page open; look around the computer and blink to click.";
     if (!status.needs_code) $("pairingCode").style.display = "none";
-  } catch {
+  } catch (error) {
     bridgeOnline = false; controlArmed = false; window.openGazeSystemArmed = false;
     button.textContent = "Start eye control";
-    statusEl.textContent = "Could not arm the bridge. Run python3 native/bridge.py and enter its pairing code.";
+    statusEl.textContent = error.message;
   } finally { button.disabled = false; }
 }
 
