@@ -13,7 +13,11 @@
       import { createSwipeKeyboard } from './keyboard.js';
 
       const { words, freqs } = await loadWords('./words.txt');
-      const kb = createSwipeKeyboard(document.getElementById('kb'), { words, freqs });
+      const kb = createSwipeKeyboard(document.getElementById('kb'), {
+        words,
+        freqs,
+        onWord: (candidates) => console.log('word candidates', candidates),
+      });
       window.swipeKeyboard = kb;
 
       // Mouse stands in for gaze, Space stands in for a blink: each press ends the

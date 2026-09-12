@@ -17,8 +17,10 @@
   line-height: 1.3;
   overflow: auto;
 }
-.swipe-suggestions, .swipe-row { display: flex; gap: 1vw; justify-content: center; }
-.swipe-suggestions { min-height: 9vh; }
+.swipe-row { display: flex; gap: 1vw; justify-content: center; }
+.swipe-output { font-size: 2.2vh; display: flex; flex-direction: column; gap: 0.8vh; }
+.swipe-slot { display: flex; flex-wrap: wrap; gap: 0.6vw 1.4vw; }
+.swipe-slot span:first-child { font-size: 3.2vh; }
 .swipe-keys { display: flex; flex-direction: column; gap: 1.2vh; }
 .swipe-key {
   --dwell: 0;
