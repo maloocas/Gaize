@@ -15,6 +15,8 @@ final class Sensing {
 
     private let systemWide = AXUIElementCreateSystemWide()
     private var currentKey: String?
+    private var currentAXElement: AXUIElement?
+    private var currentSensed: SensedElement?
     private var dwellStart: Date?
     private var hasExplainedCurrent = false
 
@@ -43,6 +45,8 @@ final class Sensing {
 
         if key != currentKey {
             currentKey = key
+            currentAXElement = axElement
+            currentSensed = sensed
             dwellStart = Date()
             hasExplainedCurrent = false
             return
@@ -55,9 +59,28 @@ final class Sensing {
             hasExplainedCurrent = true
             onDwellExplain?(sensed)
         } else if hasExplainedCurrent, elapsed >= confirmDwellSeconds {
-            onDwellConfirm?(sensed)
-            resetDwell()
+            confirmCurrentElement()
         }
+    }
+
+    /// Fired by a longer gaze dwell, or directly by a "select" voice command
+    /// so the user isn't forced to wait out the dwell timer.
+    @discardableResult
+    func confirmCurrentElement() -> SensedElement? {
+        guard let axElement = currentAXElement, let sensed = currentSensed else { return nil }
+        AXUIElementPerformAction(axElement, kAXPressAction as CFString)
+        onDwellConfirm?(sensed)
+        resetDwell()
+        return sensed
+    }
+
+    /// Fired directly by an "explain" voice command, to replay the
+    /// explanation without waiting for the dwell timer to retrigger it.
+    @discardableResult
+    func explainCurrentElement() -> SensedElement? {
+        guard let sensed = currentSensed else { return nil }
+        onDwellExplain?(sensed)
+        return sensed
     }
 
     /// Resolve a human-readable target description (from the website, e.g.
@@ -73,6 +96,8 @@ final class Sensing {
 
     private func resetDwell() {
         currentKey = nil
+        currentAXElement = nil
+        currentSensed = nil
         dwellStart = nil
         hasExplainedCurrent = false
     }
