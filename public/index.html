@@ -70,7 +70,7 @@
 
 <main id="settingsView" class="assist-view hidden single-view">
   <section class="compose-card"><span class="eyebrow">CONTROL SETUP</span><h2>Make the controls fit the person.</h2>
-    <div class="setup-grid"><div class="setup-item"><strong>1. Camera tracking</strong><p>Enable the camera below, then calibrate with eyes open.</p><button class="btn btn-primary" data-jump-camera>Open camera controls</button></div><div class="setup-item"><strong>2. Selection method</strong><label><input id="dwellToggle" type="checkbox" checked> Dwell to click after <output id="dwellOut">900ms</output></label><input id="dwellSpeed" type="range" min="500" max="1800" step="100" value="900"></div><div class="setup-item"><strong>3. Whole-computer control</strong><p>Run the local bridge to move the real macOS pointer and type into other apps.</p><button id="bridgeConnect" class="btn btn-primary">Connect local bridge</button><code>python3 native/bridge.py</code></div></div>
+    <div class="setup-grid"><div class="setup-item"><strong>1. Camera tracking</strong><p>Enable the camera below, then calibrate with eyes open.</p><button class="btn btn-primary" data-jump-camera>Open camera controls</button></div><div class="setup-item"><strong>2. Selection method</strong><label><input id="dwellToggle" type="checkbox" checked> Dwell to click after <output id="dwellOut">900ms</output></label><input id="dwellSpeed" type="range" min="500" max="1800" step="100" value="900"></div><div class="setup-item"><strong>3. Whole-computer control</strong><p>Launch the app locally so the browser can safely reach the macOS bridge.</p><button id="bridgeConnect" class="btn btn-primary">Connect local bridge</button><code>python3 native/start.py</code></div></div>
   </section>
 </main>
 

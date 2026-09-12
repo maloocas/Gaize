@@ -51,11 +51,15 @@ cd ~/aac-accelerator && ./run.sh
 Then open http://localhost:8000. Press <kbd>Space</kbd> to start scanning;
 <kbd>Space</kbd> is the switch.
 
-For whole-computer control on macOS, start the bridge in a second terminal:
+For whole-computer control on macOS, use the local launcher from the project directory:
 
 ```bash
-python3 native/bridge.py
+python3 native/start.py
 ```
+
+It starts both the web app and the bridge, then opens `http://localhost:8000`.
+Use that local page for system control: browsers may prevent the public Vercel
+page from accessing a service on your Mac. Existing healthy processes are reused.
 
 The bridge listens on `127.0.0.1:8766` (port `8765` was retired to avoid a
 collision with older bridge processes).
