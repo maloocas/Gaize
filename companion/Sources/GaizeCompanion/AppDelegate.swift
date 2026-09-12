@@ -161,6 +161,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.performSend()
         }
 
+        voiceCommands.onQuestion = { [weak self] question in
+            self?.answerQuestion(question)
+        }
+
+        bridge.onDebugQuestion = { [weak self] question in
+            self?.answerQuestion(question)
+        }
+
         bridge.onGoalComplete = { [weak self] title in
             guard let self else { return }
             print("AppDelegate: goal complete \"\(title)\"")
@@ -291,6 +299,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         dictationKey = nil
         dictationElement = nil
+    }
+
+    /// Speaks the AI's answer, then starts the goal that teaches it so the
+    /// website highlights each step in Messages.
+    private func answerQuestion(_ question: String) {
+        let language = AppSettings.shared.language
+        print("AppDelegate: question \"\(question)\"")
+        Assistant.ask(question,
+                      lookingAt: sensing.currentSensed?.title,
+                      frontApp: NSWorkspace.shared.frontmostApplication?.localizedName,
+                      language: language) { [weak self] reply in
+            guard let self else { return }
+            guard let reply else {
+                self.output.speak(language.assistantUnavailable)
+                return
+            }
+            print("AppDelegate: answer \"\(reply.answer)\" goal=\(reply.goalID ?? "none")")
+            self.output.speak(reply.answer)
+            if let goal = reply.goalID {
+                self.startGoalOnWebsite(goal)
+            }
+        }
+    }
+
+    /// Opens the website in the background if needed (the user stays in
+    /// Messages), then tells it to begin the goal - its first step's
+    /// highlight lands in Messages.
+    private func startGoalOnWebsite(_ goalID: String, attempt: Int = 0) {
+        if bridge.isConnected {
+            bridge.sendAction("start_goal:\(goalID)")
+            return
+        }
+        if attempt == 0 {
+            let config = NSWorkspace.OpenConfiguration()
+            config.activates = false
+            NSWorkspace.shared.open(AppDelegate.websiteURL, configuration: config) { _, error in
+                if let error { print("AppDelegate: failed to open website: \(error)") }
+            }
+        }
+        guard attempt < 10 else {
+            print("AppDelegate: website never connected, can't start goal \(goalID)")
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.startGoalOnWebsite(goalID, attempt: attempt + 1)
+        }
     }
 
     /// "send": focuses Messages' message body and presses Return, which is

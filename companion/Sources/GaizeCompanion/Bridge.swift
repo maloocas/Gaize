@@ -16,11 +16,14 @@ final class Bridge {
     var onDebugSelect: (() -> Void)?
     var onDebugDictate: ((String) -> Void)?
     var onDebugSend: (() -> Void)?
+    var onDebugQuestion: ((String) -> Void)?
     /// The website finished a goal's last step - { "type": "goal_complete", "title": "..." }.
     var onGoalComplete: ((String) -> Void)?
 
     private var listener: NWListener?
     private var connections: [NWConnection] = []
+    /// Whether the website is open and connected.
+    var isConnected: Bool { !connections.isEmpty }
     private let queue = DispatchQueue(label: "gaize.bridge")
 
     func start() {
@@ -103,6 +106,11 @@ final class Bridge {
             let title = json["title"] as? String ?? ""
             DispatchQueue.main.async { [weak self] in
                 self?.onGoalComplete?(title)
+            }
+        case "debug_question":
+            guard let text = json["text"] as? String else { return }
+            DispatchQueue.main.async { [weak self] in
+                self?.onDebugQuestion?(text)
             }
         case "debug_send":
             DispatchQueue.main.async { [weak self] in

@@ -15,6 +15,8 @@ final class VoiceCommands {
     var onOpenWebsiteCommand: (() -> Void)?
     /// Saying just "send" (the whole utterance) sends the Messages draft.
     var onSendCommand: (() -> Void)?
+    /// A spoken "how do I..." question, for the AI assistant.
+    var onQuestion: ((String) -> Void)?
     /// Fired with "home" / "back" / "learn" / "quiz" / "scenario" - direct
     /// voice navigation of the website's own buttons.
     var onWebsiteAction: ((String) -> Void)?
@@ -64,6 +66,8 @@ final class VoiceCommands {
     private var pendingDictation: DispatchWorkItem?
     private let recipientSilence: TimeInterval = 1.0
     private let messageSilence: TimeInterval = 1.8
+    private var pendingQuestion: DispatchWorkItem?
+    private let questionSilence: TimeInterval = 1.3
 
     /// Recognition often finalizes after a single word, so a multi-word
     /// phrase like "open website" can land as two isolated sessions - a
@@ -135,6 +139,8 @@ final class VoiceCommands {
         dictationStartIndex = 0
         pendingDictation?.cancel()
         pendingDictation = nil
+        pendingQuestion?.cancel()
+        pendingQuestion = nil
 
         let inputNode = audioEngine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
@@ -193,6 +199,13 @@ final class VoiceCommands {
         // A send restarts the session (see checkForSend); ignore any result
         // still in flight from the old one.
         if sendFiredThisSession { return }
+
+        // A question goes to the assistant whole - and its words must not
+        // fire commands ("how do I *learn*..." / "how do I *select*...").
+        if let question = questionCandidate(segments) {
+            scheduleQuestion(question, isFinal: result.isFinal, wordCount: segments.count)
+            return
+        }
 
         // Dictation fires on a pause, not only on the recognizer's final
         // result - with room noise or our own TTS in the mic, a session can
@@ -344,6 +357,45 @@ final class VoiceCommands {
         let words = phrase.split(separator: " ").map(String.init)
         guard let last = words.last, words.count <= 3 else { return false }
         return language.openWebsitePhrases.contains(last)
+    }
+
+    /// The question in the words heard since the last command/dictation:
+    /// from a question starter to the end, at least 3 words. Never while
+    /// dictating ("how are you" is message text then) or while we're speaking.
+    private func questionCandidate(_ segments: [String]) -> String? {
+        guard dictationStartIndex < segments.count,
+              isDictationModeActive?() != true, isMuted?() != true else { return nil }
+        let starters = AppSettings.shared.language.questionStarters
+        for i in dictationStartIndex..<segments.count {
+            let rest = segments[i...].joined(separator: " ")
+            guard starters.contains(where: { rest == $0 || rest.hasPrefix($0 + " ") }) else { continue }
+            guard segments.count - i >= 3, !isEcho(rest) else { return nil }
+            return rest
+        }
+        return nil
+    }
+
+    private func scheduleQuestion(_ question: String, isFinal: Bool, wordCount: Int) {
+        pendingQuestion?.cancel()
+        let fire = { [weak self] in
+            guard let self else { return }
+            self.dictationStartIndex = wordCount
+            self.recentTranscript.removeAll()
+            print("VoiceCommands: QUESTION \"\(question)\"")
+            self.onQuestion?(question)
+            self.restartSoon()
+        }
+        if isFinal {
+            fire()
+            return
+        }
+        // Questions trail off mid-thought - wait for a real pause.
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.lastSegments.count == wordCount else { return }
+            fire()
+        }
+        pendingQuestion = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + questionSilence, execute: work)
     }
 
     /// What to type for the words heard since the last dictation, or nil.

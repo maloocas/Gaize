@@ -373,6 +373,16 @@ function handleVoiceAction(action) {
     case "scenario":
       if (mode === "goal-detail" || mode === "goal") startScenario();
       break;
+    default:
+      // "start_goal:<id>" - the AI assistant picked the goal that answers
+      // the user's spoken question; start it so each step is highlighted.
+      if (action && action.startsWith("start_goal:")) {
+        const goal = GOALS.find((g) => g.id === action.slice("start_goal:".length));
+        if (goal) {
+          showGoalDetail(goal);
+          beginLearning();
+        }
+      }
   }
 }
 
