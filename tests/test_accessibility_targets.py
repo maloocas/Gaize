@@ -30,8 +30,9 @@ def test_target_roles_cover_primary_computer_controls():
 
 def test_discovery_is_bounded_for_large_accessibility_trees():
     assert T.MAX_TARGETS <= 300
-    assert T.MAX_NODES <= 2000
-    assert T.SCAN_BUDGET_SECONDS <= .5
+    # Runs on a background thread, so a longer scan never stalls the pointer.
+    assert T.MAX_NODES <= 5000
+    assert T.SCAN_BUDGET_SECONDS <= 1.0
 
 
 def test_target_kind_distinguishes_text_navigation_and_settings():
@@ -62,6 +63,20 @@ def test_nested_duplicate_boxes_keep_the_smallest_specific_target():
     inner={"x":14,"y":13,"width":102,"height":44,"role":"AXButton"}
     result=T.deduplicate_targets([outer,inner])
     assert result==[inner]
+
+
+def test_an_icon_inside_a_button_does_not_replace_the_button():
+    button={"x":10,"y":10,"width":200,"height":30,"role":"AXButton"}
+    icon={"x":14,"y":16,"width":17,"height":17,"role":"AXImage"}
+    assert T.deduplicate_targets([button,icon])==[button]
+
+
+def test_scrolled_out_content_is_outside_the_clip():
+    viewport=(0,100,800,600)
+    assert T.overlaps((10,150,50,20),viewport)
+    assert not T.overlaps((10,-4000,50,20),viewport)      # a message far above
+    assert T.intersect((0,0,1000,1000),viewport)==viewport
+    assert T.intersect((0,0,10,10),viewport) is None
 
 
 def test_distinct_neighbouring_buttons_are_not_deduplicated():

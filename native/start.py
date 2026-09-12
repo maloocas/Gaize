@@ -30,6 +30,7 @@ def main() -> None:
     subprocess.check_call([str(PYTHON), "-m", "pip", "install", "-q", "-r",
                            str(ROOT / "requirements-native.txt")], env=build_env)
     launcher = ROOT / "OpenGaze.app" / "Contents" / "MacOS" / "OpenGaze"
+    launcher.parent.mkdir(exist_ok=True)  # git does not keep the empty folder
     subprocess.check_call(["swiftc", str(ROOT / "native" / "launcher.swift"), "-o", str(launcher)], env=build_env)
     subprocess.check_call(["codesign", "--force", "--deep", "--sign", "-", str(ROOT / "OpenGaze.app")])
     PID_FILE.unlink(missing_ok=True)
@@ -47,8 +48,8 @@ def main() -> None:
             try:
                 pid=int(PID_FILE.read_text().strip())
                 os.kill(pid,0)
-                print(f"OpenGaze is running (PID {pid}). Look for ‘Blink Click’ in the menu bar.")
-                print("Move with the mouse, blink to click, and press Escape to quit.")
+                print(f"OpenGaze is running (PID {pid}). Look for ‘OpenGaze’ in the menu bar.")
+                print("Wink left/right to click, hard blink to select, press Escape 3 times to quit.")
                 return
             except (ValueError,ProcessLookupError,PermissionError):
                 pass
