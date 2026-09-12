@@ -8,12 +8,12 @@ from functools import lru_cache
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import profile as profile_store
-from .config import settings
+from .config import ROOT, settings
 from .constrained import load_model as load_lm
 from .expander import expand
 from .providers import get_provider
@@ -110,6 +110,9 @@ async def health() -> dict:
         "reachable": reachable,
         "detail": detail,
         "n_candidates": settings.n_candidates,
+        "static_bundled": settings.web_dir.exists(),
+        "corpus_available": (ROOT / "data" / "corpus.txt").exists(),
+        "profile_persistent": profile_store.is_persistent(),
     }
 
 
@@ -166,9 +169,22 @@ async def list_trials() -> dict:
     return {"trials": rows[-100:]}
 
 
-if settings.web_dir.exists():
-    @app.get("/")
-    async def index() -> FileResponse:
-        return FileResponse(settings.web_dir / "index.html")
+@app.get("/")
+async def index():
+    """Serve the app shell.
 
+    Locally the static directory sits next to the server and is returned
+    directly. On a host that serves static assets from a CDN and does not bundle
+    them with the function, fall back to the CDN's copy rather than 404 - the
+    root must never be dead just because the page lives somewhere else.
+    """
+    local = settings.web_dir / "index.html"
+    if local.exists():
+        return FileResponse(local)
+    return RedirectResponse("/index.html", status_code=307)
+
+
+# Only mount static serving when the files actually ship with the app; otherwise
+# the CDN is already handling these paths.
+if settings.web_dir.exists():
     app.mount("/", StaticFiles(directory=str(settings.web_dir), html=True), name="web")
