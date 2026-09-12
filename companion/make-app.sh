@@ -18,6 +18,20 @@ CONFIG="${1:-debug}"
 APP="Gaize.app"
 BUNDLE_ID="com.gaize.companion"
 
+# Prefer a stable Apple Development identity when one is installed. TCC
+# (Accessibility, Camera, Microphone, Speech) keys grants to the app's code
+# requirement; a fresh ad-hoc signature can therefore invalidate the grant
+# after every rebuild even though the bundle identifier stays unchanged.
+SIGN_IDENTITY="${GAIZE_SIGN_IDENTITY:-}"
+if [[ -z "$SIGN_IDENTITY" ]]; then
+  SIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
+    | sed -n 's/.*"\(Apple Development:[^"]*\)".*/\1/p' \
+    | head -n 1)"
+fi
+if [[ -z "$SIGN_IDENTITY" ]]; then
+  SIGN_IDENTITY="-"
+fi
+
 echo "▸ swift build -c $CONFIG"
 swift build -c "$CONFIG"
 
@@ -39,10 +53,12 @@ cp packaging/Info.plist "$APP/Contents/Info.plist"
 RESOURCE_BUNDLE="$(swift build -c "$CONFIG" --show-bin-path)/GaizeCompanion_GaizeCompanion.bundle"
 if [[ -d "$RESOURCE_BUNDLE" ]]; then
   cp -R "$RESOURCE_BUNDLE" "$APP/Contents/GaizeCompanion_GaizeCompanion.bundle"
-  # SwiftPM's generated bundle has no Info.plist, which codesign requires
-  # to recognize a .bundle-suffixed directory as valid bundle format
-  # (otherwise: "bundle format unrecognized, invalid, or unsuitable").
-  cat > "$APP/Contents/GaizeCompanion_GaizeCompanion.bundle/Info.plist" <<'PLIST'
+  # Older SwiftPM versions generated this bundle without an Info.plist.
+  # Newer versions put one under Contents; adding another at the bundle root
+  # makes codesign reject it as unsealed content.
+  if [[ ! -f "$APP/Contents/GaizeCompanion_GaizeCompanion.bundle/Info.plist" && \
+        ! -f "$APP/Contents/GaizeCompanion_GaizeCompanion.bundle/Contents/Info.plist" ]]; then
+    cat > "$APP/Contents/GaizeCompanion_GaizeCompanion.bundle/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -56,15 +72,16 @@ if [[ -d "$RESOURCE_BUNDLE" ]]; then
 </dict>
 </plist>
 PLIST
+  fi
 fi
 
-echo "▸ ad-hoc signing with identifier $BUNDLE_ID"
+echo "▸ signing with $SIGN_IDENTITY (identifier $BUNDLE_ID)"
 if [[ -d "$APP/Contents/GaizeCompanion_GaizeCompanion.bundle" ]]; then
-  codesign --force --sign - "$APP/Contents/GaizeCompanion_GaizeCompanion.bundle"
+  codesign --force --sign "$SIGN_IDENTITY" "$APP/Contents/GaizeCompanion_GaizeCompanion.bundle"
 fi
 
 codesign --force \
-  --sign - \
+  --sign "$SIGN_IDENTITY" \
   --identifier "$BUNDLE_ID" \
   --entitlements packaging/GaizeCompanion.entitlements \
   --options runtime \

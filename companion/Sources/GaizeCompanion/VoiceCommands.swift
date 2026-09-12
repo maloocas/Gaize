@@ -457,8 +457,10 @@ final class VoiceCommands {
     private func fireDictation(_ text: String, upTo index: Int) {
         dictationStartIndex = index
         recentTranscript.removeAll()
-        print("VoiceCommands: dictation \"\(text)\"")
-        onDictate?(text)
+        let dictatedText = AppSettings.shared.language.dictationText(from: text)
+        guard !dictatedText.isEmpty else { return }
+        print("VoiceCommands: dictation \"\(dictatedText)\"")
+        onDictate?(dictatedText)
         // Fresh session per dictation, so segment indices and the earlier
         // words don't linger in a session noise may keep open indefinitely.
         restartSoon()

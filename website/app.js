@@ -4,13 +4,32 @@
 
 const BRIDGE_URL = "ws://localhost:8765";
 
+const QUIZ_EXPLANATIONS = {
+  Compose: "Compose opens a blank conversation so you can choose a recipient and write a message.",
+  "The To field": "The To field identifies who will receive the message; the Message field holds what you want to say.",
+  Send: "Send delivers the message or selected content to the current conversation.",
+  Attach: "Attach opens the choices for adding content such as photos and files.",
+  Photos: "Photos opens your photo library so you can choose an existing picture.",
+  Search: "Search looks across conversations and message text for a person or phrase.",
+  FaceTime: "FaceTime starts a call with the person or group in the current conversation.",
+  Emoji: "Emoji inserts a standard emoji into the message you are writing.",
+  Filter: "Filter narrows the conversation list, making particular kinds of messages easier to find.",
+  Stickers: "Stickers opens your sticker collection so you can choose one to send.",
+  Polls: "Polls creates choices that everyone in a group conversation can vote on.",
+  "Send Later": "Send Later lets you choose a future date and time instead of delivering the message immediately.",
+  Genmoji: "Genmoji creates a custom emoji from a description.",
+  "Image Playground": "Image Playground generates a new image; Photos selects one that already exists.",
+  "#images": "#images searches the web for an image you can add to the conversation.",
+  "Message Effects": "Message Effects adds an animation such as balloons or confetti when the message is sent.",
+};
+
 const GOALS = [
   {
     id: "send-a-message",
     title: "Send a message",
     steps: [
       { target: "compose", instruction: "Look at the compose button to start a new conversation" },
-      { target: "to:", instruction: "Say the recipient's name, or type it into the To field" },
+      { target: "to:", instruction: "Say “type” followed by the recipient's name, or type it into the To field" },
       { target: "message", instruction: "Say your message, or type it in the message box" },
       { target: "send", instruction: "Say “send” (or press Return) to send it" },
     ],
@@ -40,9 +59,10 @@ const GOALS = [
     id: "add-an-attachment",
     title: "Add an attachment",
     steps: [
-      { target: "add", instruction: "Look at the attach button to add a photo or file" },
-      { target: "photos", instruction: "Look at Photos to pick one from your library" },
-      { target: "send", instruction: "Look at the send button to send it" },
+      { target: "add", instruction: "Look at Attach and select the + button to open attachment choices" },
+      { target: "photos", instruction: "Look at Photos and select it to open your photo library" },
+      { target: "*", highlight: false, instruction: "Choose any photo from the library to add it to your message" },
+      { target: "send", instruction: "Check the photo preview, then look at Send and select it" },
     ],
     quiz: [
       {
@@ -58,7 +78,7 @@ const GOALS = [
     ],
     scenario: {
       instruction: "Attach a photo to your message and send it.",
-      expectedTargets: ["add", "photos", "send"],
+      expectedTargets: ["add", "photos", "*", "send"],
     },
   },
   {
@@ -69,9 +89,15 @@ const GOALS = [
     ],
     quiz: [
       {
-        question: "Which control finds a conversation or message?",
+        question: "You remember a phrase from an older message but not which chat it was in. What should you use?",
         options: ["Filter", "Search", "Details", "Compose"],
         correct: "Search",
+      },
+      {
+        question: "What can you say after selecting the Search field?",
+        options: ["Type followed by a name or phrase", "Select followed by Send", "Compose followed by a date", "Explain followed by a contact"],
+        correct: "Type followed by a name or phrase",
+        explanation: "After selecting Search, say “type” followed by the person or phrase you want to find.",
       },
     ],
     scenario: {
@@ -87,9 +113,15 @@ const GOALS = [
     ],
     quiz: [
       {
-        question: "Which button starts a video call?",
+        question: "You are already viewing a conversation and want to talk face-to-face. Which control should you choose?",
         options: ["Camera", "FaceTime", "Emoji", "Attach"],
         correct: "FaceTime",
+      },
+      {
+        question: "What happens when you activate FaceTime from a conversation?",
+        options: ["It starts a call with that conversation", "It attaches a recorded video", "It opens the photo library", "It sends your draft"],
+        correct: "It starts a call with that conversation",
+        explanation: "The FaceTime control calls the person or group in the conversation you are viewing.",
       },
     ],
     scenario: {
@@ -106,9 +138,14 @@ const GOALS = [
     ],
     quiz: [
       {
-        question: "Which button adds an emoji to your message?",
+        question: "You want to add a standard smiley to your draft. Which control should you use?",
         options: ["Emoji", "Filter", "Search", "Back"],
         correct: "Emoji",
+      },
+      {
+        question: "After choosing the emoji, what completes the task?",
+        options: ["Send", "Compose", "Filter", "Details"],
+        correct: "Send",
       },
     ],
     scenario: {
@@ -124,9 +161,15 @@ const GOALS = [
     ],
     quiz: [
       {
-        question: "Which button lets you filter or sort your conversation list?",
+        question: "You only want to see a particular category of conversations. Which control should you use?",
         options: ["Filter", "Search", "Attach", "Details"],
         correct: "Filter",
+      },
+      {
+        question: "When should you use Search instead of Filter?",
+        options: ["When looking for a specific person or phrase", "When narrowing by conversation category", "When attaching a photo", "When starting a call"],
+        correct: "When looking for a specific person or phrase",
+        explanation: "Search finds specific text or people; Filter narrows the list by category.",
       },
     ],
     scenario: {
@@ -143,9 +186,14 @@ const GOALS = [
     ],
     quiz: [
       {
-        question: "Which option sends a photo from your library?",
+        question: "You want to use a picture that is already in your library. Which option should you choose?",
         options: ["Photos", "Stickers", "Genmoji", "Image Playground"],
         correct: "Photos",
+      },
+      {
+        question: "Which option would you use instead if you wanted to create a brand-new image?",
+        options: ["Image Playground", "Photos", "Filter", "Send Later"],
+        correct: "Image Playground",
       },
     ],
     scenario: {
@@ -162,9 +210,14 @@ const GOALS = [
     ],
     quiz: [
       {
-        question: "Which option sends a sticker?",
+        question: "You want to respond with something from your sticker collection. Which option should you open?",
         options: ["Polls", "Stickers", "#images", "Message Effects"],
         correct: "Stickers",
+      },
+      {
+        question: "After selecting a sticker, which control delivers it?",
+        options: ["Send", "Search", "Filter", "FaceTime"],
+        correct: "Send",
       },
     ],
     scenario: {
@@ -181,9 +234,15 @@ const GOALS = [
     ],
     quiz: [
       {
-        question: "Which option creates a poll for the group?",
+        question: "A group chat needs to vote on a meeting time. Which option should you choose?",
         options: ["Polls", "Send Later", "Genmoji", "Photos"],
         correct: "Polls",
+      },
+      {
+        question: "What should you do after adding the choices to your poll?",
+        options: ["Send it to the conversation", "Open Search", "Choose FaceTime", "Filter the chat list"],
+        correct: "Send it to the conversation",
+        explanation: "Once the poll choices are ready, send the poll so everyone in the conversation can vote.",
       },
     ],
     scenario: {
@@ -200,9 +259,15 @@ const GOALS = [
     ],
     quiz: [
       {
-        question: "Which option schedules a message to send later?",
+        question: "Your draft should arrive tomorrow morning instead of now. Which option should you use?",
         options: ["Send Later", "Polls", "Message Effects", "Filter"],
         correct: "Send Later",
+      },
+      {
+        question: "When do you choose the delivery time?",
+        options: ["After writing the message and opening Send Later", "Before opening the conversation", "After sending the message", "Inside the Search field"],
+        correct: "After writing the message and opening Send Later",
+        explanation: "Write the message first, then use Send Later to select its delivery date and time.",
       },
     ],
     scenario: {
@@ -219,9 +284,15 @@ const GOALS = [
     ],
     quiz: [
       {
-        question: "Which option creates a custom emoji from a description?",
+        question: "You want an emoji that does not already exist. Which option can create one from your description?",
         options: ["Genmoji", "Emoji", "Stickers", "Image Playground"],
         correct: "Genmoji",
+      },
+      {
+        question: "How is Genmoji different from the Emoji control?",
+        options: ["Genmoji creates a custom emoji", "Genmoji searches old messages", "Genmoji schedules delivery", "Genmoji starts a video call"],
+        correct: "Genmoji creates a custom emoji",
+        explanation: "Emoji opens standard emoji; Genmoji creates a new one from words you provide.",
       },
     ],
     scenario: {
@@ -238,9 +309,14 @@ const GOALS = [
     ],
     quiz: [
       {
-        question: "Which option generates an image to send?",
+        question: "You want Messages to create a new picture from an idea. Which option should you use?",
         options: ["Image Playground", "Genmoji", "#images", "Photos"],
         correct: "Image Playground",
+      },
+      {
+        question: "Which option should you use for a picture that already exists in your library?",
+        options: ["Photos", "Image Playground", "Genmoji", "Message Effects"],
+        correct: "Photos",
       },
     ],
     scenario: {
@@ -257,9 +333,15 @@ const GOALS = [
     ],
     quiz: [
       {
-        question: "Which option searches the web for images?",
+        question: "You want to find a reaction image online without leaving Messages. Which option should you use?",
         options: ["#images", "Search", "Photos", "Image Playground"],
         correct: "#images",
+      },
+      {
+        question: "What should you provide after opening #images?",
+        options: ["Words describing the image you want", "A delivery date", "A contact's phone number", "Poll choices"],
+        correct: "Words describing the image you want",
+        explanation: "Use a short search phrase to find a relevant web image, then choose and send it.",
       },
     ],
     scenario: {
@@ -276,9 +358,15 @@ const GOALS = [
     ],
     quiz: [
       {
-        question: "Which option adds a visual effect like balloons or confetti?",
+        question: "You want your message to arrive with balloons or confetti. Which option should you use?",
         options: ["Message Effects", "Genmoji", "Stickers", "Emoji"],
         correct: "Message Effects",
+      },
+      {
+        question: "When should you choose the effect?",
+        options: ["After writing the message and before sending it", "Before selecting a conversation", "After the message was delivered", "While searching old messages"],
+        correct: "After writing the message and before sending it",
+        explanation: "Write the message, choose Message Effects, pick an animation, and then send it.",
       },
     ],
     scenario: {
@@ -287,6 +375,95 @@ const GOALS = [
     },
   },
 ];
+
+const question = (prompt, options, correct, explanation) => ({
+  question: prompt,
+  options,
+  correct,
+  ...(explanation ? { explanation } : {}),
+});
+
+// Each lesson combines its focused questions above with these transfer and
+// sequencing questions. Five questions is enough to check recall, order, and
+// when to use the skill without turning the review into a long exam.
+const EXTRA_QUIZ_QUESTIONS = {
+  "send-a-message": [
+    question("Which order correctly starts a new message?", ["Compose → To field → Message field → Send", "To field → Send → Compose → Message field", "Search → Compose → Send → To field", "Compose → Send → To field → Message field"], "Compose → To field → Message field → Send", "Start the conversation, choose its recipient, write the message, and then send it."),
+    question("After selecting the To field, what phrase enters a contact hands-free?", ["Type followed by the contact's name", "Send followed by the contact's name", "Explain followed by the message", "Compose followed by the message"], "Type followed by the contact's name", "Say “type” and then the contact's name; Gaize enters only the name."),
+  ],
+  "add-an-attachment": [
+    question("What should you do before choosing Photos?", ["Open Attach", "Open Filter", "Press Send", "Start FaceTime"], "Open Attach"),
+    question("You selected the wrong photo. What should you avoid doing until it is corrected?", ["Send", "Search", "Compose", "Filter"], "Send", "Review the selected attachment before sending it to the conversation."),
+    question("Which sequence adds and delivers a library photo?", ["Attach → Photos → choose a photo → Send", "Photos → Filter → Send Later", "Compose → FaceTime → Send", "Search → Photos → Filter"], "Attach → Photos → choose a photo → Send", "Open attachment choices, select Photos, choose the picture, and send it."),
+  ],
+  "search-a-conversation": [
+    question("Search returns too many results. What should you try next?", ["Use a more specific name or phrase", "Press Send", "Start FaceTime", "Open Message Effects"], "Use a more specific name or phrase", "A distinctive word, phrase, or full contact name narrows the results."),
+    question("Which task is Search designed for?", ["Finding an existing conversation or message", "Creating a custom emoji", "Scheduling a draft", "Adding confetti"], "Finding an existing conversation or message"),
+    question("Which sequence searches hands-free?", ["Select Search → say “type” and a phrase", "Select Compose → say “send”", "Select Filter → say “FaceTime”", "Select Attach → say “search”"], "Select Search → say “type” and a phrase", "Focus Search first, then dictate the name or phrase you want to find."),
+  ],
+  "start-a-facetime-call": [
+    question("Before starting FaceTime, what should you verify?", ["You are in the intended conversation", "A photo is attached", "A poll is open", "Search is empty"], "You are in the intended conversation", "FaceTime calls the person or group in the current conversation."),
+    question("Which control records or adds media instead of starting a live call?", ["Camera", "FaceTime", "Filter", "Send Later"], "Camera", "Camera handles media; FaceTime starts the live call."),
+    question("Which sequence starts the intended video call?", ["Open the conversation → choose FaceTime", "Choose Attach → choose Photos", "Choose Search → choose Send", "Choose Filter → choose Camera"], "Open the conversation → choose FaceTime", "Open the correct conversation before activating FaceTime."),
+  ],
+  "add-an-emoji": [
+    question("Which option creates a new custom emoji rather than choosing a standard one?", ["Genmoji", "Emoji", "Stickers", "Photos"], "Genmoji"),
+    question("Where does the chosen emoji appear before it is sent?", ["In the message draft", "In the Search field", "In the conversation filter", "In the To field"], "In the message draft", "A selected emoji becomes part of the draft, where you can review it before sending."),
+    question("Which sequence sends a standard emoji?", ["Emoji → choose one → Send", "Genmoji → Filter → Send Later", "Photos → Emoji → Search", "Compose → FaceTime → Emoji"], "Emoji → choose one → Send", "Open Emoji, choose one, then send the completed draft."),
+  ],
+  "filter-conversations": [
+    question("What does Filter change?", ["Which conversations are shown in the list", "Who receives your next message", "When a draft is delivered", "Which camera is used"], "Which conversations are shown in the list", "Filtering changes the visible conversation list without searching message text."),
+    question("You want to find one contact by name. Which control is more direct?", ["Search", "Filter", "Attach", "Message Effects"], "Search"),
+    question("You want to narrow the list by category rather than keywords. Which control fits?", ["Filter", "Search", "Compose", "FaceTime"], "Filter"),
+  ],
+  "send-a-photo": [
+    question("What should you check before sending the selected photo?", ["That the preview is the photo you intended", "That Search is empty", "That Filter is active", "That FaceTime is open"], "That the preview is the photo you intended", "Review the preview before delivering a photo to the conversation."),
+    question("Which control completes delivery after a photo is selected?", ["Send", "Compose", "Filter", "Search"], "Send"),
+    question("Which sequence sends an existing picture?", ["Photos → choose a picture → Send", "Image Playground → Filter → Send Later", "Search → Photos → Compose", "Genmoji → Photos → FaceTime"], "Photos → choose a picture → Send", "Choose an existing picture in Photos, review it, and send it."),
+  ],
+  "send-a-sticker": [
+    question("How is a sticker different from a standard emoji in this lesson?", ["It comes from the Stickers collection", "It schedules the message", "It starts a call", "It filters conversations"], "It comes from the Stickers collection", "Use Stickers for saved or created sticker artwork and Emoji for standard emoji characters."),
+    question("What should you check before sending a sticker?", ["That the selected sticker is the one you intended", "That FaceTime is active", "That Search has results", "That a poll is open"], "That the selected sticker is the one you intended"),
+    question("Which sequence sends a sticker?", ["Stickers → choose one → Send", "Emoji → Filter → Compose", "Polls → Photos → Send", "Search → Stickers → FaceTime"], "Stickers → choose one → Send", "Open Stickers, choose the right sticker, and send it."),
+  ],
+  "create-a-poll": [
+    question("What information must a useful poll contain?", ["A question and choices", "A contact and delivery time", "A photo and effect", "A search phrase and filter"], "A question and choices", "A poll needs a clear question and distinct choices for participants."),
+    question("Where can people vote after you send the poll?", ["In the group conversation", "In your photo library", "In Search", "In FaceTime"], "In the group conversation"),
+    question("Which sequence creates a group vote?", ["Polls → add choices → Send", "Filter → Compose → Search", "Photos → Genmoji → Send", "FaceTime → Polls → Attach"], "Polls → add choices → Send", "Set up the poll and its choices before sending it to the group."),
+  ],
+  "schedule-a-message": [
+    question("What is the key difference between Send and Send Later?", ["Send delivers now; Send Later delivers at a chosen time", "Send adds a photo; Send Later adds an emoji", "Send searches; Send Later filters", "There is no difference"], "Send delivers now; Send Later delivers at a chosen time", "Choose based on when the recipient should receive the message."),
+    question("What should you verify before scheduling?", ["The message and delivery time are correct", "A poll is open", "The photo library is empty", "FaceTime is active"], "The message and delivery time are correct"),
+    question("Which sequence schedules a draft?", ["Write the message → Send Later → choose a time", "Send → write the message → Filter", "Search → choose a time → Compose", "Attach → FaceTime → Send Later"], "Write the message → Send Later → choose a time", "Finish the draft before selecting its future delivery time."),
+  ],
+  "create-a-genmoji": [
+    question("What should your Genmoji description communicate?", ["The custom emoji you want to create", "A delivery time", "A contact to call", "A phrase from an old message"], "The custom emoji you want to create", "A clear visual description helps Genmoji produce the intended result."),
+    question("What should you do after choosing the generated result?", ["Send it", "Filter conversations", "Start FaceTime", "Open Search"], "Send it"),
+    question("Which sequence creates and delivers a custom emoji?", ["Genmoji → describe it → choose one → Send", "Emoji → Search → Filter", "Photos → Polls → Send Later", "Compose → FaceTime → Genmoji"], "Genmoji → describe it → choose one → Send", "Describe, select, and review the generated emoji before sending."),
+  ],
+  "generate-an-image": [
+    question("What should you give Image Playground?", ["A description of the image you want", "A contact's phone number", "A delivery date only", "A conversation filter"], "A description of the image you want", "Describe the scene or subject you want Image Playground to create."),
+    question("What should you do before sending the generated result?", ["Review that it matches your intent", "Open FaceTime", "Clear Search", "Create a poll"], "Review that it matches your intent"),
+    question("Which sequence creates and sends a new image?", ["Image Playground → describe → choose → Send", "Photos → Filter → Compose", "#images → Polls → Send Later", "Genmoji → FaceTime → Search"], "Image Playground → describe → choose → Send", "Generate the image, select the preferred result, and send it."),
+  ],
+  "search-the-web-for-images": [
+    question("How is #images different from Photos?", ["#images searches online; Photos uses your library", "#images schedules delivery", "#images starts a call", "They do exactly the same thing"], "#images searches online; Photos uses your library", "Choose based on whether the picture is online or already saved."),
+    question("What should you check before sending a web image?", ["That the selected result fits the conversation", "That Filter is active", "That FaceTime is open", "That the To field is blank"], "That the selected result fits the conversation"),
+    question("Which sequence finds and sends an online image?", ["#images → search phrase → choose → Send", "Photos → Compose → Filter", "Search → FaceTime → Send Later", "Genmoji → Polls → Attach"], "#images → search phrase → choose → Send", "Search with useful words, choose the right result, and send it."),
+  ],
+  "add-a-message-effect": [
+    question("What does a message effect change?", ["How the message appears when delivered", "Who receives the message", "The conversation search results", "The scheduled delivery time"], "How the message appears when delivered", "Effects add presentation and animation without changing the recipient or text."),
+    question("Which feature should you use for a visual object instead of an animation?", ["Stickers", "Message Effects", "Filter", "Send Later"], "Stickers", "Stickers are visual items; Message Effects animate the delivery of a message."),
+    question("Which sequence sends a message with an effect?", ["Write message → Message Effects → choose effect → Send", "Filter → Search → Compose", "Photos → FaceTime → Send Later", "Polls → Genmoji → Attach"], "Write message → Message Effects → choose effect → Send", "Finish the message, select its effect, and then send it."),
+  ],
+};
+
+GOALS.forEach((goal) => {
+  goal.quiz = [...goal.quiz, ...(EXTRA_QUIZ_QUESTIONS[goal.id] || [])];
+  if (goal.quiz.length !== 5) {
+    throw new Error(`Expected 5 quiz questions for ${goal.id}, found ${goal.quiz.length}`);
+  }
+});
 
 let socket = null;
 let currentGoal = null;
@@ -337,16 +514,20 @@ function handleCompanionEvent(msg) {
 
   if (msg.type !== "action_completed") return;
   const title = (msg.title || "").toLowerCase();
+  const keyTargets = { to_field: "to:", message_field: "message" };
+  const canonicalTarget = keyTargets[msg.key] || (msg.key || "").replaceAll("_", " ");
+  const matches = (expectedTarget) =>
+    expectedTarget === "*" || title.includes(expectedTarget) || canonicalTarget === expectedTarget;
 
   if (mode === "goal") {
     const expected = currentGoal.steps[currentStepIndex];
-    if (expected && title.includes(expected.target)) {
+    if (expected && matches(expected.target)) {
       currentStepIndex += 1;
       renderGoal();
     }
   } else if (mode === "scenario") {
     const expectedTarget = currentGoal.scenario.expectedTargets[scenarioProgress];
-    if (expectedTarget && title.includes(expectedTarget)) {
+    if (expectedTarget && matches(expectedTarget)) {
       scenarioProgress += 1;
       renderScenario();
     }
@@ -450,7 +631,7 @@ function renderGoal() {
   if (step) {
     stepEl.textContent = step.instruction;
     followup.hidden = true;
-    requestHighlight(step.target);
+    if (step.highlight !== false) requestHighlight(step.target);
   } else {
     stepEl.textContent = "Nice — you finished the steps. Ready to check what you learned?";
     followup.hidden = false;
@@ -482,8 +663,17 @@ function startQuiz() {
   quizAnswers = [];
   hide("goal-detail", "active-goal");
   show("quiz");
-  document.getElementById("quiz-heading").textContent = "Quiz";
+  document.getElementById("quiz-heading").textContent = `${currentGoal.title} check`;
   renderQuizQuestion();
+}
+
+function shuffled(options) {
+  const result = [...options];
+  for (let i = result.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
 }
 
 function renderQuizQuestion() {
@@ -509,14 +699,46 @@ function renderQuizQuestion() {
   const options = document.createElement("div");
   options.className = "quiz-options";
 
-  question.options.forEach((option) => {
+  let answered = false;
+  shuffled(question.options).forEach((option) => {
     const button = document.createElement("button");
     button.className = "quiz-option";
     button.textContent = option;
     button.addEventListener("click", () => {
-      quizAnswers.push({ question: question.question, answer: option, correct: question.correct });
-      quizIndex += 1;
-      renderQuizQuestion();
+      if (answered) return;
+      answered = true;
+
+      const isCorrect = option === question.correct;
+      const explanation = question.explanation || QUIZ_EXPLANATIONS[question.correct] || "Review the tutorial step and try it in Messages.";
+      quizAnswers.push({
+        question: question.question,
+        answer: option,
+        correct: question.correct,
+        explanation,
+      });
+
+      options.querySelectorAll("button").forEach((choice) => {
+        choice.disabled = true;
+        if (choice.textContent === question.correct) choice.classList.add("correct");
+        if (choice === button && !isCorrect) choice.classList.add("incorrect");
+      });
+
+      const feedback = document.createElement("p");
+      feedback.className = `quiz-answer-feedback ${isCorrect ? "correct" : "incorrect"}`;
+      feedback.textContent = isCorrect
+        ? `Correct. ${explanation}`
+        : `Not quite. ${question.correct} is the right choice. ${explanation}`;
+      body.appendChild(feedback);
+
+      const nextButton = document.createElement("button");
+      nextButton.className = "btn-primary quiz-next";
+      nextButton.textContent = quizIndex + 1 === currentGoal.quiz.length ? "See results" : "Next question";
+      nextButton.addEventListener("click", () => {
+        quizIndex += 1;
+        renderQuizQuestion();
+      });
+      body.appendChild(nextButton);
+      nextButton.focus();
     });
     options.appendChild(button);
   });
@@ -556,7 +778,8 @@ function renderScenario() {
   progress.textContent = `Step ${scenarioProgress + 1} of ${scenario.expectedTargets.length}`;
   body.appendChild(progress);
 
-  requestHighlight(scenario.expectedTargets[scenarioProgress]);
+  const target = scenario.expectedTargets[scenarioProgress];
+  if (target !== "*") requestHighlight(target);
 }
 
 // ---- Feedback ----
@@ -565,13 +788,17 @@ function renderFeedback() {
   mode = "feedback";
   const body = document.getElementById("quiz-body");
   body.innerHTML = "";
+  const completedQuiz = quizAnswers.length > 0;
 
   const title = document.createElement("h3");
   title.className = "feedback-title";
 
-  if (quizAnswers.length > 0) {
+  if (completedQuiz) {
     const correctCount = quizAnswers.filter((a) => a.answer === a.correct).length;
-    title.textContent = `You got ${correctCount} of ${quizAnswers.length} right.`;
+    const perfect = correctCount === quizAnswers.length;
+    title.textContent = perfect
+      ? `Great work — ${correctCount} of ${quizAnswers.length} correct.`
+      : `${correctCount} of ${quizAnswers.length} correct. Review the notes below.`;
     body.appendChild(title);
 
     quizAnswers.forEach((a) => {
@@ -581,8 +808,8 @@ function renderFeedback() {
       const q = document.createElement("span");
       q.className = "feedback-row-question";
       q.textContent = isCorrect
-        ? `${a.question} — correct.`
-        : `${a.question} — you said "${a.answer}", correct answer is "${a.correct}".`;
+        ? `Correct: ${a.correct}. ${a.explanation}`
+        : `Your answer: ${a.answer}. Correct answer: ${a.correct}. ${a.explanation}`;
       row.appendChild(q);
       body.appendChild(row);
     });
@@ -591,11 +818,23 @@ function renderFeedback() {
     body.appendChild(title);
   }
 
+  const actions = document.createElement("div");
+  actions.className = "feedback-actions";
+
+  if (completedQuiz) {
+    const retryBtn = document.createElement("button");
+    retryBtn.className = "btn-ghost";
+    retryBtn.textContent = "Try quiz again";
+    retryBtn.addEventListener("click", startQuiz);
+    actions.appendChild(retryBtn);
+  }
+
   const doneBtn = document.createElement("button");
   doneBtn.className = "btn-primary";
   doneBtn.textContent = "Back to goals";
   doneBtn.addEventListener("click", renderGoalList);
-  body.appendChild(doneBtn);
+  actions.appendChild(doneBtn);
+  body.appendChild(actions);
 }
 
 // ---- DOM helpers ----

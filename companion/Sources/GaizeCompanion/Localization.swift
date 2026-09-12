@@ -158,6 +158,23 @@ enum AppLanguage: String, CaseIterable {
         }
     }
 
+    /// Removes an explicit dictation verb while keeping plain speech valid.
+    func dictationText(from phrase: String) -> String {
+        let prefixes: [String]
+        switch self {
+        case .english: prefixes = ["type ", "enter "]
+        case .spanish: prefixes = ["escribe ", "ingresa "]
+        case .french: prefixes = ["écris ", "tape "]
+        }
+
+        let lowercased = phrase.lowercased()
+        for prefix in prefixes where lowercased.hasPrefix(prefix) {
+            return String(phrase.dropFirst(prefix.count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return phrase
+    }
+
     var genericExplanationTemplate: (String) -> String {
         switch self {
         case .english: return { "This is the \($0)." }
