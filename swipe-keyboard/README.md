@@ -24,7 +24,7 @@ The panel in the top right records the gap between words: the time from releasin
 3. It scores each remaining word by comparing the path with the word's ideal path through the key centers, by both shape and position.
 4. It ranks the words by combining that score with how common each word is in `words.txt`.
 
-`words.txt` holds the 50k most common English words with their frequency counts. It comes from [hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords) and is built from OpenSubtitles 2018 data.
+`words.txt` holds the 150k most common English words with their frequencies, exported from [wordfreq](https://github.com/rspeer/wordfreq). wordfreq combines Wikipedia, Reddit, Twitter, Google Books, subtitles, news and web text, with data up to about 2021. Each count is the word's frequency per billion words. The list includes contractions such as "don't" and "I'm". The keyboard has no apostrophe key, so you swipe "dont" to get "don't". To regenerate the file, run `pip install wordfreq`, take `top_n_list('en', 250000)`, keep the words that match `^[a-z]+('[a-z]+)?$`, and cut the list at 150k. Past that point the list is mostly rare names and typos, and they cost memory and decode time.
 
 ## Connecting gaze
 
