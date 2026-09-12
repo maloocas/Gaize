@@ -29,6 +29,7 @@ final class Output: NSObject, AVSpeechSynthesizerDelegate {
         isSpeaking = true
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        utterance.voice = AVSpeechSynthesisVoice(language: AppSettings.shared.language.rawValue)
         synthesizer.speak(utterance)
     }
 

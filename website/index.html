@@ -12,9 +12,19 @@
         <span class="brand-mark" aria-hidden="true">◎</span>
         <span class="brand-name">Gaize</span>
       </div>
-      <div class="connection" id="connection">
-        <span class="dot" id="connection-dot"></span>
-        <span id="status">Connecting…</span>
+      <div class="topbar-right">
+        <label class="language-picker">
+          <span class="sr-only">Spoken language</span>
+          <select id="language-select">
+            <option value="en-US">English</option>
+            <option value="es-ES">Español</option>
+            <option value="fr-FR">Français</option>
+          </select>
+        </label>
+        <div class="connection" id="connection" role="status" aria-live="polite">
+          <span class="dot" id="connection-dot" aria-hidden="true"></span>
+          <span id="status">Connecting…</span>
+        </div>
       </div>
     </header>
 
@@ -39,7 +49,7 @@
           <button class="btn-ghost" id="cancel-goal">Back to goals</button>
         </div>
         <div class="steps-track" id="steps-track"></div>
-        <p class="instruction" id="active-step"></p>
+        <p class="instruction" id="active-step" aria-live="polite"></p>
         <div id="followup-choice" class="followup" hidden>
           <button class="btn-primary" id="btn-quiz">Take a quiz</button>
           <button class="btn-secondary" id="btn-scenario">Try a scenario</button>
@@ -50,7 +60,7 @@
         <div class="panel-header">
           <h2 id="quiz-heading">Quiz</h2>
         </div>
-        <div id="quiz-body"></div>
+        <div id="quiz-body" aria-live="polite"></div>
       </section>
     </main>
 

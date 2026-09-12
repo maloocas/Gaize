@@ -47,6 +47,78 @@ const GOALS = [
       expectedTargets: ["attach"],
     },
   },
+  {
+    id: "search-a-conversation",
+    title: "Search your messages",
+    steps: [
+      { target: "search", instruction: "Look at the search field to find a conversation" },
+    ],
+    quiz: [
+      {
+        question: "Which control finds a conversation or message?",
+        options: ["Filter", "Search", "Details", "Compose"],
+        correct: "Search",
+      },
+    ],
+    scenario: {
+      instruction: "Search for a conversation.",
+      expectedTargets: ["search"],
+    },
+  },
+  {
+    id: "start-a-facetime-call",
+    title: "Start a FaceTime call",
+    steps: [
+      { target: "facetime", instruction: "Look at the FaceTime button to start a video call" },
+    ],
+    quiz: [
+      {
+        question: "Which button starts a video call?",
+        options: ["Camera", "FaceTime", "Emoji", "Attach"],
+        correct: "FaceTime",
+      },
+    ],
+    scenario: {
+      instruction: "Start a FaceTime call.",
+      expectedTargets: ["facetime"],
+    },
+  },
+  {
+    id: "add-an-emoji",
+    title: "Add an emoji",
+    steps: [
+      { target: "emoji", instruction: "Look at the emoji button to add one to your message" },
+    ],
+    quiz: [
+      {
+        question: "Which button adds an emoji to your message?",
+        options: ["Emoji", "Filter", "Search", "Back"],
+        correct: "Emoji",
+      },
+    ],
+    scenario: {
+      instruction: "Add an emoji to your message.",
+      expectedTargets: ["emoji"],
+    },
+  },
+  {
+    id: "filter-conversations",
+    title: "Filter your conversation list",
+    steps: [
+      { target: "filter", instruction: "Look at the filter button to sort your conversations" },
+    ],
+    quiz: [
+      {
+        question: "Which button lets you filter or sort your conversation list?",
+        options: ["Filter", "Search", "Attach", "Details"],
+        correct: "Filter",
+      },
+    ],
+    scenario: {
+      instruction: "Filter your conversation list.",
+      expectedTargets: ["filter"],
+    },
+  },
 ];
 
 let socket = null;
@@ -56,10 +128,14 @@ let quizAnswers = [];
 let quizIndex = 0;
 let scenarioProgress = 0;
 let mode = "goal-list"; // goal-list | goal | quiz | scenario | feedback
+let selectedLanguage = "en-US";
 
 function connect() {
   socket = new WebSocket(BRIDGE_URL);
-  socket.addEventListener("open", () => setStatus(true, "Connected to Gaize"));
+  socket.addEventListener("open", () => {
+    setStatus(true, "Connected to Gaize");
+    requestSetLanguage(selectedLanguage);
+  });
   socket.addEventListener("close", () => {
     setStatus(false, "Waiting for Gaize…");
     setTimeout(connect, 1000);
@@ -73,6 +149,11 @@ function connect() {
 function setStatus(connected, text) {
   document.getElementById("status").textContent = text;
   document.getElementById("connection-dot").classList.toggle("connected", connected);
+}
+
+function requestSetLanguage(languageCode) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+  socket.send(JSON.stringify({ type: "set_language", language: languageCode }));
 }
 
 function requestHighlight(target) {
@@ -309,6 +390,10 @@ function escapeHtml(str) {
 document.getElementById("cancel-goal").addEventListener("click", renderGoalList);
 document.getElementById("btn-quiz").addEventListener("click", startQuiz);
 document.getElementById("btn-scenario").addEventListener("click", startScenario);
+document.getElementById("language-select").addEventListener("change", (event) => {
+  selectedLanguage = event.target.value;
+  requestSetLanguage(selectedLanguage);
+});
 
 renderGoalList();
 connect();

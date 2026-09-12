@@ -3,11 +3,13 @@ import Network
 
 /// Local WebSocket server (localhost:8765) that the website connects to.
 /// Website -> companion: { "type": "highlight", "target": "send button" }
+///                        { "type": "set_language", "language": "es-ES" }
 /// Companion -> website: { "type": "hover" | "action_completed", "role": "...", "title": "..." }
 final class Bridge {
     static let port: UInt16 = 8765
 
     var onHighlightRequest: ((String) -> Void)?
+    var onSetLanguage: ((String) -> Void)?
 
     private var listener: NWListener?
     private var connections: [NWConnection] = []
@@ -63,11 +65,21 @@ final class Bridge {
 
     private func handle(_ data: Data) {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              json["type"] as? String == "highlight",
-              let target = json["target"] as? String else { return }
+              let type = json["type"] as? String else { return }
 
-        DispatchQueue.main.async { [weak self] in
-            self?.onHighlightRequest?(target)
+        switch type {
+        case "highlight":
+            guard let target = json["target"] as? String else { return }
+            DispatchQueue.main.async { [weak self] in
+                self?.onHighlightRequest?(target)
+            }
+        case "set_language":
+            guard let language = json["language"] as? String else { return }
+            DispatchQueue.main.async { [weak self] in
+                self?.onSetLanguage?(language)
+            }
+        default:
+            break
         }
     }
 
