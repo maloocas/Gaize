@@ -213,10 +213,37 @@ final class Sensing {
     }
 
     private func describe(_ element: AXUIElement) -> SensedElement? {
-        let role = stringAttribute(element, kAXRoleAttribute as CFString) ?? "unknown"
-        let title = stringAttribute(element, kAXTitleAttribute as CFString)
+        var role = stringAttribute(element, kAXRoleAttribute as CFString) ?? "unknown"
+        var title = stringAttribute(element, kAXTitleAttribute as CFString)
             ?? stringAttribute(element, kAXDescriptionAttribute as CFString)
             ?? ""
+
+        // Gaze precision is imperfect: it often lands on an untitled child
+        // (an inner <span>, an AXStaticText) instead of the actual button
+        // wrapping it - which used to produce nonsense like "Selecting
+        // AXStaticText." The click itself still works (it bubbles up to
+        // the real button), but the spoken title was meaningless and
+        // KnowledgePack/matchedEntry couldn't match it either. Walk up to
+        // the nearest ancestor with a real title/description instead.
+        if title.isEmpty {
+            var current = element
+            for _ in 0..<5 {
+                var parentRef: CFTypeRef?
+                guard AXUIElementCopyAttributeValue(current, kAXParentAttribute as CFString, &parentRef) == .success,
+                      let parentRaw = parentRef else { break }
+                let parent = parentRaw as! AXUIElement
+
+                let parentTitle = stringAttribute(parent, kAXTitleAttribute as CFString)
+                    ?? stringAttribute(parent, kAXDescriptionAttribute as CFString)
+                    ?? ""
+                if !parentTitle.isEmpty {
+                    title = parentTitle
+                    role = stringAttribute(parent, kAXRoleAttribute as CFString) ?? role
+                    break
+                }
+                current = parent
+            }
+        }
 
         guard let position = pointAttribute(element, kAXPositionAttribute as CFString),
               let size = sizeAttribute(element, kAXSizeAttribute as CFString) else {
