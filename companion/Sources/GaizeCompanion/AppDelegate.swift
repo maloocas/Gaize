@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 
 /// Menu-bar entry point. Owns lifecycle of the six pieces:
 /// GazeTracker (camera -> gaze point), Sensing (AX hit-test + dwell on the
@@ -16,6 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let voiceCommands = VoiceCommands()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        requestAccessibilityPermission()
+
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem?.button?.title = "👁"
 
@@ -62,5 +65,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quit() {
         NSApplication.shared.terminate(nil)
+    }
+
+    /// AXIsProcessTrusted() alone never triggers macOS's permission dialog —
+    /// it just silently returns false forever. Passing the prompt option is
+    /// what actually adds Gaize to System Settings > Privacy & Security >
+    /// Accessibility (unchecked) and shows the request dialog on first
+    /// launch. The user still has to flip the checkbox there themselves and
+    /// relaunch — macOS never allows a program to grant this itself.
+    private func requestAccessibilityPermission() {
+        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        let options: NSDictionary = [promptKey: true]
+        let trusted = AXIsProcessTrustedWithOptions(options)
+        if !trusted {
+            print("Gaize: Accessibility permission not yet granted. Enable Gaize in System Settings > Privacy & Security > Accessibility, then relaunch.")
+        }
     }
 }
