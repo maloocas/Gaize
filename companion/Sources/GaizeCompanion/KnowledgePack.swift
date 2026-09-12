@@ -80,6 +80,13 @@ enum KnowledgePack {
             .spanish: "Esto busca en tus conversaciones y mensajes.",
             .french: "Ceci recherche dans vos conversations et messages.",
         ]),
+        // "back_to_goals" must come before "back" - .first(where:) stops
+        // at the first match, and "back to goals" contains "back".
+        Entry(key: "back_to_goals", match: "back to goals", explanations: [
+            .english: "This takes you back to the list of goals.",
+            .spanish: "Esto te lleva de vuelta a la lista de objetivos.",
+            .french: "Ceci vous ramène à la liste des objectifs.",
+        ]),
         Entry(key: "back", match: "back", explanations: [
             .english: "This takes you back to the previous screen.",
             .spanish: "Esto te lleva de vuelta a la pantalla anterior.",
@@ -129,6 +136,28 @@ enum KnowledgePack {
             .english: "This adds a fun visual effect to your message, like balloons or confetti.",
             .spanish: "Esto agrega un efecto visual divertido a tu mensaje, como globos o confeti.",
             .french: "Ceci ajoute un effet visuel amusant à votre message, comme des ballons ou des confettis.",
+        ]),
+
+        // Gaize's own website buttons, not Messages.
+        Entry(key: "home", match: "back to home", explanations: [
+            .english: "This takes you back to the home screen.",
+            .spanish: "Esto te lleva de vuelta a la pantalla de inicio.",
+            .french: "Ceci vous ramène à l'écran d'accueil.",
+        ]),
+        Entry(key: "learn_this_goal", match: "learn this goal", explanations: [
+            .english: "This starts the guided walkthrough for this goal, step by step.",
+            .spanish: "Esto inicia el recorrido guiado para este objetivo, paso a paso.",
+            .french: "Ceci démarre le guide pas à pas pour cet objectif.",
+        ]),
+        Entry(key: "take_a_quiz", match: "take a quiz", explanations: [
+            .english: "This gives you a short quiz to check what you learned.",
+            .spanish: "Esto te da un breve cuestionario para comprobar lo que aprendiste.",
+            .french: "Ceci vous propose un court quiz pour vérifier ce que vous avez appris.",
+        ]),
+        Entry(key: "try_a_scenario", match: "try a scenario", explanations: [
+            .english: "This gives you a real task to complete, and checks that you did it correctly.",
+            .spanish: "Esto te da una tarea real para completar, y verifica que la hiciste correctamente.",
+            .french: "Ceci vous donne une tâche réelle à accomplir, et vérifie que vous l'avez bien faite.",
         ]),
     ]
 
