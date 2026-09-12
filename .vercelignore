@@ -1,0 +1,6 @@
+.native-venv/
+.venv/
+OpenGaze.app/
+native/
+requirements-native.txt
+tests/
