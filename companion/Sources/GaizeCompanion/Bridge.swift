@@ -14,6 +14,7 @@ final class Bridge {
     /// commands) do, for testing without needing to actually speak.
     var onDebugExplain: (() -> Void)?
     var onDebugSelect: (() -> Void)?
+    var onDebugDictate: ((String) -> Void)?
 
     private var listener: NWListener?
     private var connections: [NWConnection] = []
@@ -89,6 +90,11 @@ final class Bridge {
         case "debug_select":
             DispatchQueue.main.async { [weak self] in
                 self?.onDebugSelect?()
+            }
+        case "debug_dictate":
+            guard let text = json["text"] as? String else { return }
+            DispatchQueue.main.async { [weak self] in
+                self?.onDebugDictate?(text)
             }
         default:
             break

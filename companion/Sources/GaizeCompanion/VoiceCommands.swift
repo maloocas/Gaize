@@ -22,6 +22,12 @@ final class VoiceCommands {
     /// Checked before acting on any recognized command - lets the caller
     /// mute us while Output is speaking, to avoid hearing our own TTS.
     var isMuted: (() -> Bool)?
+    /// Checked last, after every known command keyword fails to match -
+    /// when true, the next unmatched phrase is treated as dictation (e.g.
+    /// a contact's name for the To: field) via onDictate instead of being
+    /// silently ignored.
+    var isDictationModeActive: (() -> Bool)?
+    var onDictate: ((String) -> Void)?
 
     private var recognizer: SFSpeechRecognizer?
     private let audioEngine = AVAudioEngine()
@@ -164,6 +170,9 @@ final class VoiceCommands {
         } else if language.explainKeywords.contains(where: recentText.contains) {
             recentTranscript.removeAll()
             onExplainCommand?()
+        } else if isDictationModeActive?() == true {
+            recentTranscript.removeAll()
+            onDictate?(newWords)
         }
     }
 }

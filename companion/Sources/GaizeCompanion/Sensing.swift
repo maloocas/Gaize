@@ -13,7 +13,9 @@ struct SensedElement {
 /// hear about the current element, "select" to confirm/press it.
 final class Sensing {
     var onExplainRequested: ((SensedElement) -> Void)?
-    var onConfirmed: ((SensedElement) -> Void)?
+    /// Carries the raw AXUIElement alongside the description - used for
+    /// dictating spoken text into a text field right after confirming it.
+    var onConfirmed: ((SensedElement, AXUIElement) -> Void)?
 
     private let systemWide = AXUIElementCreateSystemWide()
     private var currentAXElement: AXUIElement?
@@ -97,7 +99,7 @@ final class Sensing {
             AXUIElementPerformAction(axElement, kAXPressAction as CFString)
         }
 
-        onConfirmed?(sensed)
+        onConfirmed?(sensed, axElement)
         resetCurrent()
         return sensed
     }
