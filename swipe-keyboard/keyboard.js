@@ -1,12 +1,23 @@
 // Swipe keyboard. Pointer/gaze positions go in via kb.feed(x, y); the path is
 // recorded between word boundaries and decoded into ranked candidate words.
 // Picking the final word is left to a downstream model (e.g. an LLM with context).
+//
+// We don't know how long the eyes take to reach the next word's first letter after a
+// boundary, so each word is decoded several times, with the path starting at each offset.
 
 import { createDecoder } from './decoder.js';
 
 const ROWS = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'];
 
-export function createSwipeKeyboard(root, { words, freqs, accuracy = 1.5, limit = 10, temperature = 0.5, onWord }) {
+export function createSwipeKeyboard(root, {
+  words,
+  freqs,
+  accuracy = 1.5,
+  offsets = [0, 200, 400, 600, 800], // ms after the boundary
+  perOffset = 3,
+  temperature = 0.5,
+  onWord,
+}) {
   const decoder = createDecoder(words, freqs);
 
   root.classList.add('swipe-kb');
@@ -21,10 +32,10 @@ export function createSwipeKeyboard(root, { words, freqs, accuracy = 1.5, limit 
   const canvas = root.querySelector('.swipe-trace');
   const ctx = canvas.getContext('2d');
 
-  let lattice = []; // one ranked candidate list per word slot
+  let lattice = []; // one candidate list per word slot
   let path = null;
+  let t0 = 0;
   let last = null;
-  let pending = null;
 
   function layout() {
     const centers = {};
@@ -43,7 +54,12 @@ export function createSwipeKeyboard(root, { words, freqs, accuracy = 1.5, limit 
 
   function render() {
     output.innerHTML = lattice
-      .map((c) => `<div class="swipe-slot">${c.slice(0, 5).map((x) => `<span style="opacity:${0.35 + 0.65 * x.p}">${x.word} ${x.p.toFixed(2)}</span>`).join('')}</div>`)
+      .map((c) => `<div class="swipe-slot">${offsets
+        .map((o) => `<div class="swipe-group"><i>+${o / 1000}s</i>${c
+          .filter((x) => x.offset === o)
+          .map((x) => `<span style="opacity:${0.35 + 0.65 * x.p}">${x.word} ${x.p.toFixed(2)}</span>`)
+          .join('')}</div>`)
+        .join('')}</div>`)
       .join('');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!path?.length) return;
@@ -54,36 +70,45 @@ export function createSwipeKeyboard(root, { words, freqs, accuracy = 1.5, limit 
     ctx.stroke();
   }
 
+  function decodeFrom(offset) {
+    const cutoff = t0 + offset;
+    const i = path.findIndex((p) => p.t >= cutoff);
+    if (i < 0) return [];
+    const sub = path.slice(Math.max(0, i - 1)); // include the position at the cutoff
+    const results = decoder.decode(sub, { radius: accuracy, limit: perOffset });
+    if (!results.length) return [];
+    const exps = results.map((r) => Math.exp(-(r.cost - results[0].cost) / temperature));
+    const sum = exps.reduce((a, b) => a + b, 0);
+    return results.map((r, j) => ({ word: r.word, p: exps[j] / sum, offset }));
+  }
+
   return {
-    feed(x, y) {
-      last = { x, y };
+    feed(x, y, t = performance.now()) {
+      last = { x, y, t };
       if (path) {
         path.push(last);
         render();
       }
     },
-    start() {
-      path = last ? [last] : [];
+    start(t = performance.now()) {
+      t0 = t;
+      path = last ? [{ ...last, t }] : [];
     },
-    // Decodes the recorded path into [{word, p}], p = softmax(-cost / temperature) over the top candidates.
+    // Decodes the recorded path from each start offset. Candidates are [{word, p, offset}],
+    // up to perOffset per offset; p is a softmax over that offset's candidates.
     end() {
-      const results = path?.length ? decoder.decode(path, { radius: accuracy, limit }) : [];
+      const candidates = path?.length ? offsets.flatMap(decodeFrom) : [];
       path = null;
-      if (results.length) {
-        const exps = results.map((r) => Math.exp(-(r.cost - results[0].cost) / temperature));
-        const sum = exps.reduce((a, b) => a + b, 0);
-        const candidates = results.map((r, i) => ({ word: r.word, p: exps[i] / sum }));
+      if (candidates.length) {
         lattice.push(candidates);
         onWord?.(candidates, lattice);
       }
       render();
     },
-    // Single word-break input (a blink later): ends the current word, then starts
-    // recording the next one after gapMs so the eyes can move to its first letter.
-    boundary(gapMs = 500) {
-      clearTimeout(pending);
+    // Single word-break input (a blink later): ends the current word and starts the next.
+    boundary() {
       if (path) this.end();
-      pending = setTimeout(() => this.start(), gapMs);
+      this.start();
     },
     deleteWord() {
       lattice.pop();
