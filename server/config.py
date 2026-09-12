@@ -51,7 +51,7 @@ class Settings:
     context_turns: int = int(os.environ.get("AAC_CONTEXT_TURNS", "4"))
 
     profile_path: Path = ROOT / "data" / "profile.json"
-    web_dir: Path = ROOT / "web"
+    web_dir: Path = ROOT / "public"
 
     @property
     def provider_chain(self) -> list[str]:

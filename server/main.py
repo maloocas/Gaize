@@ -1,9 +1,10 @@
 """FastAPI app: serves the scanning UI and the candidate-generation endpoint."""
 from __future__ import annotations
 
-import asyncio
 import json
+import tempfile
 import time
+from functools import lru_cache
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -19,7 +20,24 @@ from .providers import get_provider
 
 app = FastAPI(title="LLM-Accelerated AAC", version="0.1.0")
 
-SESSION_LOG = settings.profile_path.parent / "sessions.jsonl"
+@lru_cache(maxsize=1)
+def session_log() -> Path | None:
+    """Pick a writable location for the trial log, or None if there isn't one.
+
+    On Vercel the project directory is read-only, so this lands in the instance's
+    temp dir. That is per-instance and short-lived, which is why the browser also
+    keeps its own copy - the demo's headline number must not depend on it."""
+    candidates = [settings.profile_path.parent / "sessions.jsonl",
+                  Path(tempfile.gettempdir()) / "aac-sessions.jsonl"]
+    for path in candidates:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a"):
+                pass
+            return path
+        except OSError:
+            continue
+    return None
 
 
 class CandidateRequest(BaseModel):
@@ -114,7 +132,8 @@ async def get_profile() -> dict:
 
 @app.put("/api/profile")
 async def put_profile(data: dict) -> dict:
-    return profile_store.save(data)
+    saved = profile_store.save(data)
+    return {**saved, "_persistent": profile_store.is_persistent()}
 
 
 @app.post("/api/trial")
@@ -122,18 +141,24 @@ async def log_trial(record: TrialRecord) -> dict:
     """Persist baseline vs accelerated trials so the demo can quote real numbers."""
     payload = record.model_dump()
     payload["ts"] = time.time()
-    SESSION_LOG.parent.mkdir(parents=True, exist_ok=True)
-    with SESSION_LOG.open("a") as handle:
-        handle.write(json.dumps(payload) + "\n")
+    path = session_log()
+    if path is None:
+        return {"logged": False, "reason": "no writable location"}
+    try:
+        with path.open("a") as handle:
+            handle.write(json.dumps(payload) + "\n")
+    except OSError as exc:
+        return {"logged": False, "reason": str(exc)}
     return {"logged": True}
 
 
 @app.get("/api/trials")
 async def list_trials() -> dict:
-    if not SESSION_LOG.exists():
+    path = session_log()
+    if path is None or not path.exists():
         return {"trials": []}
     rows = []
-    for line in SESSION_LOG.read_text().splitlines():
+    for line in path.read_text().splitlines():
         try:
             rows.append(json.loads(line))
         except json.JSONDecodeError:
@@ -141,9 +166,9 @@ async def list_trials() -> dict:
     return {"trials": rows[-100:]}
 
 
-@app.get("/")
-async def index() -> FileResponse:
-    return FileResponse(settings.web_dir / "index.html")
+if settings.web_dir.exists():
+    @app.get("/")
+    async def index() -> FileResponse:
+        return FileResponse(settings.web_dir / "index.html")
 
-
-app.mount("/", StaticFiles(directory=str(settings.web_dir), html=True), name="web")
+    app.mount("/", StaticFiles(directory=str(settings.web_dir), html=True), name="web")

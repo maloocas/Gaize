@@ -370,12 +370,32 @@ function speak(text) {
 }
 
 /* ------------------------------------------------------------- trial log */
+// The browser keeps its own copy of the trial log. On a serverless host each
+// request may hit a fresh instance with an empty disk, and the baseline-vs-
+// accelerated number is the whole point of the demo - it must not depend on
+// server-side persistence.
+const TRIAL_KEY = "aac.trials.v1";
+
+function localTrials() {
+  try { return JSON.parse(localStorage.getItem(TRIAL_KEY) || "[]"); }
+  catch { return []; }
+}
+
+function pushLocalTrial(row) {
+  try {
+    const rows = localTrials();
+    rows.push(row);
+    localStorage.setItem(TRIAL_KEY, JSON.stringify(rows.slice(-100)));
+  } catch { /* private browsing, quota, blocked storage - not fatal */ }
+}
+
 async function logTrial(mode, spoken) {
   const elapsed = state.startedAt ? Date.now() - state.startedAt : 0;
   const payload = {
     mode, spoken, target: "", selections: state.selections,
     elapsed_ms: elapsed, input_source: state.switchSource,
   };
+  pushLocalTrial({ ...payload, ts: Date.now() / 1000 });
   try {
     await fetch("/api/trial", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -398,8 +418,14 @@ function resetTrial(clearText = true) {
 
 async function loadTrials() {
   try {
-    const res = await fetch("/api/trials");
-    const { trials } = await res.json();
+    // Prefer whatever this browser recorded; fall back to the server's copy.
+    let trials = localTrials();
+    if (!trials.length) {
+      try {
+        const res = await fetch("/api/trials");
+        trials = (await res.json()).trials || [];
+      } catch { trials = []; }
+    }
     const box = $("trialSummary");
     if (!trials.length) { box.textContent = "no trials yet"; return; }
     const recent = trials.slice(-6).reverse();
@@ -551,6 +577,10 @@ function wire() {
 
   $("saveProfile").addEventListener("click", saveProfile);
   $("refreshTrials").addEventListener("click", loadTrials);
+  $("clearTrials").addEventListener("click", () => {
+    try { localStorage.removeItem(TRIAL_KEY); } catch { /* ignore */ }
+    loadTrials();
+  });
 
   // The keyboard switch. Space is the switch; it must never scroll the page.
   window.addEventListener("keydown", (e) => {

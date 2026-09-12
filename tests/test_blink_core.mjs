@@ -1,4 +1,4 @@
-/* Tests for the blink decision logic (web/blink-core.js).
+/* Tests for the blink decision logic (public/blink-core.js).
  * Run: node tests/test_blink_core.mjs
  *
  * These cover the failure modes that cannot be reproduced on demand in front of
@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import {
   meanEar, earFor, createBlinkGate, thresholdFromSamples, LEFT_EYE, RIGHT_EYE,
-} from "../web/blink-core.js";
+} from "../public/blink-core.js";
 
 let passed = 0, failed = 0;
 function test(name, fn) {

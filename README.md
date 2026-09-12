@@ -142,11 +142,13 @@ server/
   constrained.py  offline bigram beam search, valid by construction
   profile.py      personal vocabulary store
   main.py         FastAPI app + endpoints
-web/
+public/           served straight from the CDN on Vercel
   app.js          scanning engine, modes, metrics, TTS
   blink-core.js   pure blink logic (EAR, state machine, calibration)
   blink.js        camera + MediaPipe wiring
   vendor/         vendored MediaPipe runtime + model (offline)
+api/
+  index.py        Vercel ASGI entry point
 data/
   profile.json    personal vocabulary
   corpus.txt      582 utterances behind the offline generator
@@ -158,6 +160,31 @@ data/
 PYTHONPATH=. ./.venv/bin/python -m pytest tests/ -q   # 31 tests
 node tests/test_blink_core.mjs                        # 18 tests
 ```
+
+## Deployment
+
+Deployed on Vercel. `public/` is served from the CDN and `api/index.py` runs the
+FastAPI app as a serverless function — the vendored MediaPipe wasm never touches
+the lambda.
+
+Set `OPENROUTER_API_KEY` in the Vercel project's environment variables. Without
+it the deploy still works, falling back to the offline generator.
+
+Two differences from running locally:
+
+- **Ollama is unreachable** from a serverless function, so the chain is
+  `openrouter -> constrained`. The offline generator behaves identically.
+- **The filesystem is read-only.** Vocabulary edits apply to the running
+  instance but are not persisted, and the trial log lives in the browser's
+  `localStorage` rather than on the server — which is why the baseline-vs-
+  accelerated number survives instance churn.
+
+Deploying also gets you HTTPS, which browsers require for camera access: the
+blink switch works on the deployed URL but not over plain `http://` on a LAN
+address.
+
+> The deployed `/api/candidates` endpoint is unauthenticated and spends the
+> configured OpenRouter key. Set a spend limit on the key if the URL is shared.
 
 The blink tests cover what a webcam cannot be made to do on demand: noisy
 frames, long eye-rests, double-triggers, and the narrow-eyed-operator case that
