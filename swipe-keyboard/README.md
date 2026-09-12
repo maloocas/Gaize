@@ -27,7 +27,12 @@ Open http://localhost:8000. **Space** stands in for a blink. Each press ends the
 The decoder expects positions in viewport coordinates.
 
 ```js
-const kb = createSwipeKeyboard(el, await loadWords('./words.txt'));
+const kb = createSwipeKeyboard(el, {
+  ...(await loadWords('./words.txt')),
+  // Called once per word: candidates = [{ word, p }, ...] (top 10, p sums to 1),
+  // lattice = every word's candidate list so far. Hand these to the LLM.
+  onWord: (candidates, lattice) => {},
+});
 kb.feed(x, y); // send every gaze sample
 kb.boundary(); // call on each blink: ends the current word, starts the next after 500 ms
 kb.start();    // or control recording directly
