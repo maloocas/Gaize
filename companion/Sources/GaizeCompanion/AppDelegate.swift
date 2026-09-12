@@ -139,6 +139,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return self.dictationElement != nil || self.sensing.focusedRecipientField() != nil
         }
 
+        voiceCommands.isRecipientPending = { [weak self] in
+            guard let self, let field = self.sensing.focusedRecipientField() else { return false }
+            return !(self.filledRecipientField.map { CFEqual($0, field) } ?? false)
+        }
+
+        voiceCommands.lingeringSpokenText = { [weak self] in
+            self?.output.lingeringSpokenText
+        }
+
         voiceCommands.onDictate = { [weak self] text in
             self?.performDictation(text)
         }

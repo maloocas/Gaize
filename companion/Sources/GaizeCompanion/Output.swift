@@ -41,6 +41,14 @@ final class Output: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate
         return Date() < lastTextValidUntil ? lastText : nil
     }
 
+    /// Like recentSpokenText but remembered for several seconds - the
+    /// recognizer can surface our own words ("got it compose") well after we
+    /// finished saying them, glued onto the user's next words.
+    var lingeringSpokenText: String? {
+        if isSpeaking { return lastText }
+        return Date() < lastTextValidUntil.addingTimeInterval(6) ? lastText : nil
+    }
+
     override init() {
         super.init()
         synthesizer.delegate = self
