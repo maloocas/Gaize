@@ -33,6 +33,15 @@ EVENT_SOURCE = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemSta
 
 KEY_RADIUS = 12.0
 
+# Blink durations. A closure of 0.07-0.9s is an ordinary blink (one = left
+# click, two in quick succession = drag). Anything longer used to be discarded
+# as the user simply resting their eyes, which left that range free: holding the
+# eyes shut deliberately past the blink ceiling now means right click. Using
+# duration rather than a third blink in a row matters, because chaining three
+# reliable blinks is hard and the counting gestures are already taken.
+LONG_BLINK_MIN = 0.95     # comfortably past the 0.9s blink ceiling, no overlap
+LONG_BLINK_MAX = 2.60     # beyond this they are resting, not signalling
+
 
 def quartz_cursor():
     """Current pointer position in QUARTZ coordinates (origin top-left).
@@ -110,6 +119,19 @@ class CrosshairView(AppKit.NSView):
             line.setLineWidth_(3); line.stroke()
         AppKit.NSColor.whiteColor().setFill()
         AppKit.NSBezierPath.bezierPathWithOvalInRect_(((23,23),(6,6))).fill()
+
+        # Holding the eyes shut arms a right click. Show it filling up, and turn
+        # the reticle green once it will actually fire, so the hold is not a
+        # guess about how long is long enough.
+        progress=getattr(self.controller,"long_blink_progress",0.0)
+        if progress>0.05:
+            armed=getattr(self.controller,"long_blink_armed",False)
+            (AppKit.NSColor.colorWithRed_green_blue_alpha_(.25,1,.55,1) if armed
+             else AppKit.NSColor.colorWithRed_green_blue_alpha_(1,.82,.12,.95)).setStroke()
+            arc=AppKit.NSBezierPath.bezierPath()
+            arc.appendBezierPathWithArcWithCenter_radius_startAngle_endAngle_clockwise_(
+                (center,center),21,90,90-360*min(1.0,progress),True)
+            arc.setLineWidth_(4); arc.stroke()
 
 
 class SwipeTraceView(AppKit.NSView):
@@ -289,6 +311,7 @@ class NativeController(NSObject):
         self.open_ears=collections.deque(maxlen=120); self.closed_frames=0
         self.closed_since=0.0; self.last_blink=0.0; self.smooth=[.5,.5]
         self.click_flash_until=0.0; self.drag_mode=False; self.last_drag_point=None
+        self.long_blink_armed=False; self.long_blink_progress=0.0
         self.pending_blink=False; self.pending_blink_at=0.0; self.blink_generation=0
         self.keyboard_window=None; self.keyboard_display=None
         self.keyboard_title=None; self.suggestion_row_y=0.0
@@ -325,8 +348,14 @@ class NativeController(NSObject):
         self.status_item.button().setTitle_("◉ Blink Click")
         self.menu=AppKit.NSMenu.alloc().init()
         mode=AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "Move the mouse normally · blink to click",None,"")
+            "Blink to click · hold to right click · double blink to drag",None,"")
         self.menu.addItem_(mode); self.menu.addItem_(AppKit.NSMenuItem.separatorItem())
+        # Every gesture keeps a non-gesture equivalent. Blink detection can be
+        # unreliable under bad lighting, and a right click that only exists as a
+        # timed eye hold would simply be unavailable when that happens.
+        right_item=AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Right Click at Pointer","rightClick:","r")
+        right_item.setTarget_(self); self.menu.addItem_(right_item)
         hide_item=AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
             "Close Keyboard","hideKeyboard:","k")
         hide_item.setTarget_(self); self.menu.addItem_(hide_item)
@@ -490,6 +519,28 @@ class NativeController(NSObject):
 
     def handleBlink_(self, timestamp):
         self.register_blink(float(timestamp))
+
+    def handleLongBlink_(self, _timestamp):
+        """A deliberate long hold means right click."""
+        self.rightClick_(None)
+
+    def rightClick_(self, _sender):
+        self.long_blink_armed=False; self.long_blink_progress=0.0
+        if self.pointer_over_keyboard():
+            return          # our own keys have no context menu
+        if self.drag_mode:
+            return          # a right click mid-drag would only confuse the target
+        # Cancel any single blink still waiting to fire, so a long hold does not
+        # also deliver a left click when the pending timer expires.
+        self.pending_blink=False; self.blink_generation+=1
+        self.flashCrosshair_(None)
+        where=quartz_cursor()
+        for kind in (Quartz.kCGEventRightMouseDown,Quartz.kCGEventRightMouseUp):
+            event=Quartz.CGEventCreateMouseEvent(
+                EVENT_SOURCE,kind,where,Quartz.kCGMouseButtonRight)
+            Quartz.CGEventSetIntegerValueField(
+                event,Quartz.kCGMouseEventButtonNumber,Quartz.kCGMouseButtonRight)
+            Quartz.CGEventPost(Quartz.kCGHIDEventTap,event)
 
     @objc.python_method
     def pointer_over_keyboard(self):
@@ -755,12 +806,25 @@ class NativeController(NSObject):
         if ear<threshold:
             self.closed_frames+=1
             if self.closed_frames==2: self.closed_since=now
+            # Arm right click once the hold passes the blink ceiling, so the
+            # reticle can show it coming rather than firing without warning.
+            if self.closed_frames>=2:
+                held=now-self.closed_since
+                self.long_blink_progress=max(0.0,min(1.0,held/LONG_BLINK_MIN))
+                self.long_blink_armed=LONG_BLINK_MIN<=held<=LONG_BLINK_MAX
         else:
-            if self.closed_frames>=2 and .07<=now-self.closed_since<=.9 and now-self.last_blink>.38:
-                self.last_blink=now
-                self.performSelectorOnMainThread_withObject_waitUntilDone_(
-                    "handleBlink:",now,False)
+            held=now-self.closed_since
+            if self.closed_frames>=2 and now-self.last_blink>.38:
+                if .07<=held<=.9:
+                    self.last_blink=now
+                    self.performSelectorOnMainThread_withObject_waitUntilDone_(
+                        "handleBlink:",now,False)
+                elif LONG_BLINK_MIN<=held<=LONG_BLINK_MAX:
+                    self.last_blink=now
+                    self.performSelectorOnMainThread_withObject_waitUntilDone_(
+                        "handleLongBlink:",now,False)
             self.closed_frames=0
+            self.long_blink_armed=False; self.long_blink_progress=0.0
 
     def refreshGaze_(self, _sender):
         if self.window.isVisible():
