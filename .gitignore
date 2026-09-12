@@ -4,3 +4,5 @@ __pycache__/
 .env
 data/sessions.jsonl
 .DS_Store
+.vercel
+.env*
