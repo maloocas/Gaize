@@ -8,13 +8,6 @@
   </head>
   <body>
     <div id="kb"></div>
-    <aside class="gap-stats">
-      <b>Gaps between words</b>
-      <div id="gap-summary">Type a few words to measure.</div>
-      <div id="gap-list"></div>
-      <button id="gap-copy">Copy JSON</button>
-      <button id="gap-reset">Reset</button>
-    </aside>
     <script type="module">
       import { loadWords } from './decoder.js';
       import { createSwipeKeyboard } from './keyboard.js';
@@ -23,47 +16,19 @@
       const kb = createSwipeKeyboard(document.getElementById('kb'), {
         words,
         freqs,
-        offsets: [0], // hold mode: the path starts exactly when Space goes down
-        perOffset: 15,
         onWord: (candidates) => console.log('word candidates', candidates),
       });
       window.swipeKeyboard = kb;
 
-      // Calibration: gap = time from releasing Space (word end) to pressing it again (next
-      // word start). This is the travel time to the next word's first letter, which the
-      // blink model needs to know.
-      const gaps = [];
-      let lastUp = null;
-      const summary = document.getElementById('gap-summary');
-      const list = document.getElementById('gap-list');
-      const pct = (s, q) => s[Math.min(s.length - 1, Math.floor(q * s.length))];
-      function renderGaps() {
-        if (!gaps.length) return;
-        const s = [...gaps].sort((a, b) => a - b);
-        const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
-        summary.textContent = `n=${gaps.length} · mean ${mean.toFixed(0)} · median ${pct(s, 0.5)} · p10 ${pct(s, 0.1)} · p90 ${pct(s, 0.9)} ms`;
-        list.textContent = gaps.slice(-20).join(', ');
-      }
-      document.getElementById('gap-copy').onclick = () => navigator.clipboard.writeText(JSON.stringify(gaps));
-      document.getElementById('gap-reset').onclick = () => { gaps.length = 0; lastUp = null; summary.textContent = 'Type a few words to measure.'; list.textContent = ''; };
-      window.gaps = gaps;
-
-      // Trackpad/mouse stands in for gaze. Hold Space while tracing a word, release to end it.
-      // Backspace deletes a word (and resets the gap timer so corrections don't skew it).
+      // Trackpad/mouse stands in for gaze, a Space tap stands in for a blink: each tap ends
+      // the current word and starts the next, decoded from the calibrated start offsets.
+      // Backspace deletes a word.
       addEventListener('mousemove', (e) => kb.feed(e.clientX, e.clientY));
       addEventListener('keydown', (e) => {
         if (e.code === 'Space') e.preventDefault();
         if (e.repeat) return;
-        if (e.code === 'Space') {
-          if (lastUp !== null) { gaps.push(Math.round(performance.now() - lastUp)); renderGaps(); }
-          kb.start();
-        }
-        if (e.code === 'Backspace') { kb.deleteWord(); lastUp = null; }
-      });
-      addEventListener('keyup', (e) => {
-        if (e.code !== 'Space') return;
-        kb.end();
-        lastUp = performance.now();
+        if (e.code === 'Space') kb.boundary();
+        if (e.code === 'Backspace') kb.deleteWord();
       });
     </script>
   </body>

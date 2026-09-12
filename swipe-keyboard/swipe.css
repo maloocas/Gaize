@@ -34,18 +34,3 @@
   background: #1a1d26;
 }
 .swipe-trace { position: fixed; inset: 0; pointer-events: none; }
-
-.gap-stats {
-  position: fixed;
-  top: 2vh;
-  right: 2vw;
-  width: 22rem;
-  padding: 0.8rem 1rem;
-  border-radius: 0.6rem;
-  background: #12151d;
-  color: #c9d0dc;
-  font: 13px/1.5 system-ui, sans-serif;
-}
-.gap-stats b { display: block; color: #e8ecf4; }
-.gap-stats #gap-list { color: #6b7385; margin: 0.3rem 0; word-break: break-word; }
-.gap-stats button { margin-right: 0.4rem; background: #1a1d26; color: inherit; border: 1px solid #2a2f3b; border-radius: 0.4rem; padding: 0.2rem 0.6rem; cursor: pointer; }
