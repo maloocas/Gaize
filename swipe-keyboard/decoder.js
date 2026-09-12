@@ -43,10 +43,17 @@ function normalize(pts) {
   return pts.map((p) => ({ x: (p.x - cx) / s, y: (p.y - cy) / s }));
 }
 
-function meanDist(a, b) {
+// Templates are stored packed as [x0, y0, x1, y1, ...] to keep memory low with 100k+ words.
+function pack(pts) {
+  const a = new Float32Array(pts.length * 2);
+  pts.forEach((p, i) => { a[2 * i] = p.x; a[2 * i + 1] = p.y; });
+  return a;
+}
+
+function meanDist(pts, packed) {
   let d = 0;
-  for (let i = 0; i < a.length; i++) d += Math.hypot(a[i].x - b[i].x, a[i].y - b[i].y);
-  return d / a.length;
+  for (let i = 0; i < pts.length; i++) d += Math.hypot(pts[i].x - packed[2 * i], pts[i].y - packed[2 * i + 1]);
+  return d / pts.length;
 }
 
 export function createDecoder(words, freqs = null) {
@@ -59,7 +66,7 @@ export function createDecoder(words, freqs = null) {
     byFirst.get(w[0]).push(i);
   });
   const logPrior = freqs ? freqs.map((f) => Math.log(f + 1)) : null;
-  const maxLogPrior = logPrior ? Math.max(...logPrior) : 0;
+  const maxLogPrior = logPrior ? logPrior.reduce((a, b) => Math.max(a, b), -Infinity) : 0;
 
   function template(i) {
     let t = templates.get(i);
@@ -67,11 +74,12 @@ export function createDecoder(words, freqs = null) {
       const pts = [];
       for (const ch of words[i]) {
         const k = keys[ch];
+        if (!k) continue; // apostrophes have no key; "don't" is swiped as "dont"
         const last = pts[pts.length - 1];
         if (!last || last.x !== k.x || last.y !== k.y) pts.push(k);
       }
       const r = resample(pts);
-      t = { loc: r, shape: normalize(r) };
+      t = { loc: pack(r), shape: pack(normalize(r)) };
       templates.set(i, t);
     }
     return t;
@@ -83,6 +91,14 @@ export function createDecoder(words, freqs = null) {
       keys = keyCenters;
       keyW = width;
       templates.clear();
+      // Build all templates in the background so the first decodes aren't slow.
+      let i = 0;
+      const warm = () => {
+        if (keys !== keyCenters) return; // layout changed; a newer warm-up is running
+        for (const end = Math.min(i + 5000, words.length); i < end; i++) template(i);
+        if (i < words.length) setTimeout(warm, 0);
+      };
+      setTimeout(warm, 0);
     },
 
     decode(path, { limit = 6, radius = 1.6 } = {}) {
@@ -119,7 +135,7 @@ export function createDecoder(words, freqs = null) {
           cost += 0.5 * (Math.hypot(a.x - start.x, a.y - start.y) + Math.hypot(b.x - end.x, b.y - end.y)) / keyW;
           for (const p of pauses) {
             let best = Infinity;
-            for (const ch of w) best = Math.min(best, Math.hypot(keys[ch].x - p.x, keys[ch].y - p.y));
+            for (const ch of w) if (keys[ch]) best = Math.min(best, Math.hypot(keys[ch].x - p.x, keys[ch].y - p.y));
             cost += Math.max(0, best / keyW - 0.5) / pauses.length;
           }
           if (logPrior) cost += 0.15 * (maxLogPrior - logPrior[i]);
@@ -139,7 +155,7 @@ export async function loadWords(url) {
   const freqs = [];
   for (const line of lines) {
     const [w, f] = line.trim().toLowerCase().split(/\s+/);
-    if (!w || !/^[a-z]+$/.test(w)) continue;
+    if (!w || !/^[a-z]+('[a-z]+)?$/.test(w)) continue;
     words.push(w);
     freqs.push(f ? Number(f) : NaN);
   }
