@@ -22,10 +22,8 @@ Two things here are load-bearing beyond plumbing:
 """
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
-from pathlib import Path
+import os
 import random
-import subprocess
-import sys
 import threading
 import time
 
@@ -35,7 +33,6 @@ from AppKit import (NSPasteboard, NSPasteboardTypeString,
                     NSRunningApplication, NSWorkspace)
 
 HOST, PORT = "127.0.0.1", 8766
-KEYBOARD = Path(__file__).with_name("keyboard.py")
 
 LOCAL_ORIGINS = ("http://localhost:8000", "http://127.0.0.1:8000")
 REMOTE_ORIGINS = ("https://aac-accelerator.vercel.app",)
@@ -53,8 +50,6 @@ _last_panic_reason = None
 # what makes typing into Mail, Slack or anywhere else actually work.
 _app_history: list[dict] = []
 _history_lock = threading.Lock()
-_keyboard_lock = threading.Lock()
-_keyboard_process = None
 
 
 def is_armed() -> bool:
@@ -165,11 +160,11 @@ def _focused_editable() -> dict | None:
     if app is None:
         return None
     # Blink-clicking an on-screen key must not interpret the keyboard's own
-    # preview entry as a new target and recursively replace the keyboard.
-    with _keyboard_lock:
-        if (_keyboard_process is not None and _keyboard_process.poll() is None
-                and int(app.processIdentifier()) == _keyboard_process.pid):
-            return None
+    # preview entry as a new target and recursively reopen the keyboard. The
+    # panel now lives in this process rather than a spawned one, so the check
+    # is simply whether focus stayed with us.
+    if int(app.processIdentifier()) == os.getpid():
+        return None
     ax_app = AS.AXUIElementCreateApplication(app.processIdentifier())
     focused = _attr(ax_app, "AXFocusedUIElement")
     if focused is None:
@@ -185,31 +180,23 @@ def _focused_editable() -> dict | None:
             "role": str(subrole or role or "editable")}
 
 
-def _show_keyboard(target: dict) -> None:
-    """Open one floating keyboard, bound to the app containing the field."""
-    global _keyboard_process
-    with _keyboard_lock:
-        if _keyboard_process is not None and _keyboard_process.poll() is None:
-            _keyboard_process.terminate()
-        _keyboard_process = subprocess.Popen(
-            [sys.executable, str(KEYBOARD), "--pid", str(target["pid"]),
-             "--app", str(target["app"])],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+def click(show_keyboard: bool = False):
+    """Click wherever the pointer is, and report an editable target if any.
 
-
-def click(show_keyboard: bool = True):
+    Showing a keyboard is deliberately not this function's job. Displaying UI
+    means owning a GUI event loop, which an HTTP handler thread does not have -
+    the previous version worked around that by spawning a separate Tk process,
+    which is what produced the second, uglier keyboard. The native controller
+    owns its panel and calls this purely to find out what got focused.
+    """
     point = Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
     for kind in (Quartz.kCGEventLeftMouseDown, Quartz.kCGEventLeftMouseUp):
         event = Quartz.CGEventCreateMouseEvent(
             None, kind, point, Quartz.kCGMouseButtonLeft)
         Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
-    # Focus changes land just after mouse-up. Inspect the real target and open
-    # the keyboard only for an editable control—not merely any blink click.
+    # Focus changes land just after mouse-up, so look only after that settles.
     time.sleep(0.12)
-    target = _focused_editable()
-    if target and show_keyboard:
-        _show_keyboard(target)
-    return target
+    return _focused_editable()
 
 
 def insert_text(pid: int, text: str) -> bool:

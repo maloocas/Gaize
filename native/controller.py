@@ -23,6 +23,16 @@ from gaze_math import GazeCalibration
 from swipe_decoder import SwipeDecoder
 
 
+# One shared HID-state event source for every synthetic mouse event.
+# Posting a button-down with source=None leaves the HID system believing no
+# button is held, so when the user then moves the pointer the system emits
+# MouseMoved rather than LeftMouseDragged and the drag never happens. Driving
+# press, drag and release from a single HID-state source keeps that state
+# coherent, which is what makes dragging work at all.
+EVENT_SOURCE = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
+
+KEY_RADIUS = 12.0
+
 TARGETS = ((.08,.08),(.5,.08),(.92,.08),(.08,.5),(.5,.5),(.92,.5),(.08,.92),(.5,.92),(.92,.92))
 PID_FILE = Path("/private/tmp/opengaze.pid")
 SWIPE_WORDS = Path(__file__).with_name("swipe_words.txt")
@@ -103,6 +113,72 @@ class SwipeTraceView(AppKit.NSView):
         for point in points[1:]: path.lineToPoint_(point)
         AppKit.NSColor.colorWithRed_green_blue_alpha_(.15,.85,1,.78).setStroke()
         path.setLineWidth_(7); path.setLineCapStyle_(AppKit.NSLineCapStyleRound); path.stroke()
+
+
+class KeyView(AppKit.NSView):
+    """A single keyboard key, drawn by hand.
+
+    The stock NSButton bezel is a small grey Aqua control: wrong shape, wrong
+    contrast and far too timid for a key someone aims at with their eyes. These
+    draw as large high-contrast slabs that light up under the pointer, so the
+    user can see what they are about to hit before they commit to it.
+    """
+    controller=objc.ivar(); keyValue=objc.ivar(); keyTitle=objc.ivar()
+    accent=objc.ivar(); hovering=objc.ivar(); pressed=objc.ivar()
+
+    def initWithFrame_controller_title_value_accent_(self,frame,controller,title,value,accent):
+        self=objc.super(KeyView,self).initWithFrame_(frame)
+        if self is None: return None
+        self.controller=controller; self.keyTitle=title; self.keyValue=value
+        self.accent=bool(accent); self.hovering=False; self.pressed=False
+        return self
+
+    def updateTrackingAreas(self):
+        for area in self.trackingAreas(): self.removeTrackingArea_(area)
+        self.addTrackingArea_(
+            AppKit.NSTrackingArea.alloc().initWithRect_options_owner_userInfo_(
+                self.bounds(),
+                AppKit.NSTrackingMouseEnteredAndExited
+                | AppKit.NSTrackingActiveAlways
+                | AppKit.NSTrackingInVisibleRect,
+                self, None))
+
+    def mouseEntered_(self,_event):
+        self.hovering=True; self.setNeedsDisplay_(True)
+
+    def mouseExited_(self,_event):
+        self.hovering=False; self.setNeedsDisplay_(True)
+
+    def mouseDown_(self,_event):
+        self.pressed=True; self.setNeedsDisplay_(True)
+
+    def mouseUp_(self,_event):
+        self.pressed=False; self.setNeedsDisplay_(True)
+        self.controller.keyPressed_(self.keyValue)
+
+    def drawRect_(self,_rect):
+        bounds=self.bounds()
+        path=AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+            AppKit.NSInsetRect(bounds,2,2),KEY_RADIUS,KEY_RADIUS)
+        if self.pressed:      fill=(.40,.85,1,1.0)
+        elif self.hovering:   fill=(.30,.72,.98,.85)
+        elif self.accent:     fill=(.17,.72,.42,.92)
+        else:                 fill=(.16,.22,.30,.95)
+        AppKit.NSColor.colorWithRed_green_blue_alpha_(*fill).setFill(); path.fill()
+        AppKit.NSColor.colorWithWhite_alpha_(1,.92 if self.hovering else .42).setStroke()
+        path.setLineWidth_(2); path.stroke()
+
+        long_label=len(self.keyTitle)>2
+        attrs={AppKit.NSFontAttributeName:
+                   AppKit.NSFont.systemFontOfSize_weight_(
+                       17 if long_label else 30, AppKit.NSFontWeightSemibold),
+               AppKit.NSForegroundColorAttributeName:
+                   AppKit.NSColor.colorWithWhite_alpha_(.06,1) if self.pressed
+                   else AppKit.NSColor.whiteColor()}
+        label=NSString.stringWithString_(self.keyTitle)
+        size=label.sizeWithAttributes_(attrs)
+        label.drawAtPoint_withAttributes_(
+            ((bounds.size.width-size.width)/2,(bounds.size.height-size.height)/2),attrs)
 
 
 class CalibrationView(AppKit.NSView):
@@ -192,6 +268,7 @@ class NativeController(NSObject):
         self.click_flash_until=0.0; self.drag_mode=False
         self.pending_blink=False; self.pending_blink_at=0.0; self.blink_generation=0
         self.keyboard_window=None; self.keyboard_display=None
+        self.keyboard_title=None; self.suggestion_row_y=0.0
         self.keyboard_text=""; self.keyboard_target=None
         self.keyboard_glass=None; self.suggestion_buttons=[]
         self.swipe_decoder=SwipeDecoder(SWIPE_WORDS)
@@ -227,13 +304,31 @@ class NativeController(NSObject):
         mode=AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
             "Move the mouse normally · blink to click",None,"")
         self.menu.addItem_(mode); self.menu.addItem_(AppKit.NSMenuItem.separatorItem())
+        hide_item=AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Close Keyboard","hideKeyboard:","k")
+        hide_item.setTarget_(self); self.menu.addItem_(hide_item)
+        self.menu.addItem_(AppKit.NSMenuItem.separatorItem())
         quit_item=AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
             "Quit OpenGaze","quit:","q")
         quit_item.setTarget_(self); self.menu.addItem_(quit_item)
         self.status_item.setMenu_(self.menu)
+        # A single Escape closes the keyboard from anywhere. The panel is
+        # non-activating and deliberately never takes key focus, so it cannot
+        # receive the keystroke itself - this has to be a global monitor.
+        self.escape_monitor=AppKit.NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
+            AppKit.NSEventMaskKeyDown,self.on_global_key)
         threading.Thread(target=self.panic_loop,daemon=True).start()
         self.request_camera_access()
         return self
+
+    @objc.python_method
+    def on_global_key(self, event):
+        try:
+            if event.keyCode()==53 and self.keyboard_visible():
+                self.performSelectorOnMainThread_withObject_waitUntilDone_(
+                    "hideKeyboard:",None,False)
+        except Exception:
+            pass
 
     @objc.python_method
     def request_camera_access(self):
@@ -311,13 +406,19 @@ class NativeController(NSObject):
         point=AppKit.NSEvent.mouseLocation()
         self.crosshair_window.setFrameOrigin_((point.x-26,point.y-26))
         if self.swipe_recording:
-            self.swipe_path.append((point.x,point.y))
+            local=self.panel_point()
+            if not self.swipe_path or abs(local[0]-self.swipe_path[-1][0])>1.2 \
+                    or abs(local[1]-self.swipe_path[-1][1])>1.2:
+                self.swipe_path.append(local)
             if self.swipe_trace_view is not None:
                 self.swipe_trace_view.setNeedsDisplay_(True)
         elif self.drag_mode:
-            Quartz.CGEventPost(Quartz.kCGHIDEventTap,
-                Quartz.CGEventCreateMouseEvent(None,Quartz.kCGEventLeftMouseDragged,
-                                               point,Quartz.kCGMouseButtonLeft))
+            drag=Quartz.CGEventCreateMouseEvent(
+                EVENT_SOURCE,Quartz.kCGEventLeftMouseDragged,
+                point,Quartz.kCGMouseButtonLeft)
+            Quartz.CGEventSetIntegerValueField(
+                drag,Quartz.kCGMouseEventButtonNumber,Quartz.kCGMouseButtonLeft)
+            Quartz.CGEventPost(Quartz.kCGHIDEventTap,drag)
         self.crosshair_view.setNeedsDisplay_(True)
 
     def flashCrosshair_(self, _sender):
@@ -345,14 +446,30 @@ class NativeController(NSObject):
         target=click(show_keyboard=False)
         if target and int(target["pid"]) != os.getpid(): self.show_keyboard(target)
 
+    @objc.python_method
+    def panel_point(self):
+        """Pointer position in keyboard-panel coordinates.
+
+        The swipe path used to be recorded in screen coordinates while the key
+        centres it is matched against are panel coordinates. Those only line up
+        while the panel happens to sit at the screen origin, which is why swiped
+        words decoded so badly. Convert explicitly instead of relying on it.
+        """
+        point=AppKit.NSEvent.mouseLocation()
+        if self.keyboard_window is None: return (point.x,point.y)
+        local=self.keyboard_window.convertPointFromScreen_(point)
+        return (local.x,local.y)
+
     def toggleDrag_(self, _sender):
-        if self.keyboard_window is not None and self.keyboard_window.isVisible():
+        if self.keyboard_visible():
             if self.swipe_recording:
                 self.finish_swipe()
             else:
-                self.swipe_recording=True; self.drag_mode=True
-                point=AppKit.NSEvent.mouseLocation(); self.swipe_path=[(point.x,point.y)]
+                self.swipe_recording=True
+                self.swipe_path=[self.panel_point()]
                 self.status_item.button().setTitle_("◆ SWIPE · double blink to finish")
+                if self.swipe_trace_view is not None:
+                    self.swipe_trace_view.setNeedsDisplay_(True)
             self.crosshair_view.setNeedsDisplay_(True)
             return
         point=Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
@@ -362,8 +479,9 @@ class NativeController(NSObject):
         else:
             kind=Quartz.kCGEventLeftMouseDown; self.drag_mode=True
             self.status_item.button().setTitle_("◆ DRAG MODE · double blink to release")
-        Quartz.CGEventPost(Quartz.kCGHIDEventTap,
-            Quartz.CGEventCreateMouseEvent(None,kind,point,Quartz.kCGMouseButtonLeft))
+        event=Quartz.CGEventCreateMouseEvent(
+            EVENT_SOURCE,kind,point,Quartz.kCGMouseButtonLeft)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap,event)
         self.crosshair_view.setNeedsDisplay_(True)
 
     @objc.python_method
@@ -381,89 +499,168 @@ class NativeController(NSObject):
         for button in self.suggestion_buttons: button.removeFromSuperview()
         self.suggestion_buttons=[]
         if not words or self.keyboard_glass is None: return
+        words=list(words)[:5]
         width=self.keyboard_window.frame().size.width
-        gap=10; button_w=min(190,(width-56-gap*(len(words)-1))/len(words)); total=button_w*len(words)+gap*(len(words)-1); x=(width-total)/2
-        y=self.keyboard_window.frame().size.height-194
-        for word in words[:5]:
-            button=self.make_key(word,f"SUGGEST:{word}",((x,y),(button_w,48)))
+        gap=10; button_w=min(190,(width-60-gap*(len(words)-1))/len(words))
+        total=button_w*len(words)+gap*(len(words)-1); x=(width-total)/2
+        for word in words:
+            button=self.make_key(word,f"SUGGEST:{word}",
+                                 ((x,self.suggestion_row_y),(button_w,46)))
             self.keyboard_glass.addSubview_(button); self.suggestion_buttons.append(button)
             x+=button_w+gap
 
     @objc.python_method
-    def show_keyboard(self, target):
-        self.keyboard_target=target; self.keyboard_text=""
-        screen=AppKit.NSScreen.mainScreen().frame(); width=screen.size.width
-        height=min(690,screen.size.height*.72)
-        self.keyboard_window=AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
-            ((0,0),(width,height)),AppKit.NSWindowStyleMaskBorderless,
+    def build_keyboard(self):
+        """Create the keyboard panel once and keep it.
+
+        The previous version allocated a brand new NSWindow on every open and
+        never released the old one, so repeated opens stacked invisible floating
+        windows on top of each other and the keyboard progressively stopped
+        responding. One panel, reused, fixes that.
+
+        It is an NSPanel with NSWindowStyleMaskNonactivatingPanel and is ordered
+        in with orderFrontRegardless(), never makeKeyAndOrderFront_. That matters
+        more than it looks: activating our app takes first-responder status away
+        from the app the user is typing into, which is exactly the field we are
+        about to insert text in.
+        """
+        # visibleFrame, not frame: it excludes the Dock and the menu bar. Sitting
+        # at the screen origin put the whole bottom action row - space, swipe,
+        # close, insert - underneath the Dock where it could not be clicked.
+        screen=AppKit.NSScreen.mainScreen().visibleFrame()
+        width=screen.size.width; height=min(560,screen.size.height*.60)
+        origin=(screen.origin.x,screen.origin.y)
+        panel=AppKit.NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
+            (origin,(width,height)),
+            AppKit.NSWindowStyleMaskBorderless|AppKit.NSWindowStyleMaskNonactivatingPanel,
             AppKit.NSBackingStoreBuffered,False)
-        self.keyboard_window.setLevel_(AppKit.NSFloatingWindowLevel)
-        self.keyboard_window.setCollectionBehavior_(AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces)
+        panel.setLevel_(AppKit.NSFloatingWindowLevel)
+        panel.setFloatingPanel_(True)
+        panel.setBecomesKeyOnlyIfNeeded_(True)
+        panel.setHidesOnDeactivate_(False)
+        panel.setOpaque_(False)
+        panel.setBackgroundColor_(AppKit.NSColor.clearColor())
+        panel.setCollectionBehavior_(
+            AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces|
+            AppKit.NSWindowCollectionBehaviorFullScreenAuxiliary)
+        panel.setAppearance_(AppKit.NSAppearance.appearanceNamed_(
+            AppKit.NSAppearanceNameDarkAqua))
+
         glass=AppKit.NSVisualEffectView.alloc().initWithFrame_(((0,0),(width,height)))
         glass.setMaterial_(AppKit.NSVisualEffectMaterialHUDWindow)
         glass.setBlendingMode_(AppKit.NSVisualEffectBlendingModeBehindWindow)
         glass.setState_(AppKit.NSVisualEffectStateActive)
-        self.keyboard_window.setContentView_(glass)
-        self.keyboard_glass=glass
-        title=AppKit.NSTextField.labelWithString_(
-            f"POINT + BLINK TO TYPE INTO {target['app']}")
-        title.setFrame_(((28,height-44),(width-56,28)))
-        title.setFont_(AppKit.NSFont.boldSystemFontOfSize_(16)); title.setTextColor_(AppKit.NSColor.cyanColor())
-        glass.addSubview_(title)
-        self.keyboard_display=AppKit.NSTextField.alloc().initWithFrame_(((28,height-112),(width-56,54)))
+        glass.setWantsLayer_(True); glass.layer().setCornerRadius_(22)
+        backdrop=AppKit.NSView.alloc().initWithFrame_(((0,0),(width,height)))
+        backdrop.setWantsLayer_(True)
+        backdrop.layer().setBackgroundColor_(
+            AppKit.NSColor.colorWithRed_green_blue_alpha_(.04,.07,.11,.90).CGColor())
+        backdrop.layer().setCornerRadius_(22)
+        glass.addSubview_(backdrop)
+        panel.setContentView_(glass)
+
+        self.keyboard_window=panel; self.keyboard_glass=glass
+
+        self.keyboard_title=AppKit.NSTextField.labelWithString_("")
+        self.keyboard_title.setFrame_(((30,height-40),(width-190,26)))
+        self.keyboard_title.setFont_(
+            AppKit.NSFont.systemFontOfSize_weight_(15,AppKit.NSFontWeightSemibold))
+        self.keyboard_title.setTextColor_(
+            AppKit.NSColor.colorWithRed_green_blue_alpha_(.45,.85,1,.95))
+        glass.addSubview_(self.keyboard_title)
+
+        # Always-present, always-reachable exit. A keyboard that covers half the
+        # screen with no obvious way out is worse than no keyboard.
+        close=KeyView.alloc().initWithFrame_controller_title_value_accent_(
+            ((width-78,height-50),(48,40)),self,"✕","CLOSE",False)
+        glass.addSubview_(close)
+
+        self.keyboard_display=AppKit.NSTextField.alloc().initWithFrame_(
+            ((30,height-106),(width-60,50)))
         self.keyboard_display.setEditable_(False); self.keyboard_display.setSelectable_(False)
-        self.keyboard_display.setFont_(AppKit.NSFont.systemFontOfSize_(30))
+        self.keyboard_display.setFont_(AppKit.NSFont.systemFontOfSize_(28))
         self.keyboard_display.setBezeled_(False); self.keyboard_display.setDrawsBackground_(True)
-        self.keyboard_display.setBackgroundColor_(AppKit.NSColor.colorWithWhite_alpha_(1,.82))
-        self.keyboard_display.setTextColor_(AppKit.NSColor.colorWithWhite_alpha_(.08,1))
+        self.keyboard_display.setBackgroundColor_(
+            AppKit.NSColor.colorWithRed_green_blue_alpha_(.02,.04,.07,.92))
+        self.keyboard_display.setTextColor_(AppKit.NSColor.whiteColor())
+        self.keyboard_display.setWantsLayer_(True)
+        self.keyboard_display.layer().setCornerRadius_(10)
         glass.addSubview_(self.keyboard_display)
+
+        self.suggestion_row_y=height-166
         rows=("QWERTYUIOP","ASDFGHJKL","ZXCVBNM")
         self.key_centers={}
-        y=height-280
+        y=height-248
         for row in rows:
-            gap=10; key_h=72; key_w=min(112,(width-56-gap*(len(row)-1))/len(row))
+            gap=9; key_h=64
+            key_w=min(104,(width-60-gap*(len(row)-1))/len(row))
             total=key_w*len(row)+gap*(len(row)-1); x=(width-total)/2
             for letter in row:
-                glass.addSubview_(self.make_key(letter,letter.lower(),((x,y),(key_w,key_h))))
+                glass.addSubview_(self.make_key(
+                    letter,letter.lower(),((x,y),(key_w,key_h))))
                 self.key_centers[letter.lower()]=(x+key_w/2,y+key_h/2)
                 x+=key_w+gap
-            y-=key_h+12
+            y-=key_h+10
         self.swipe_decoder.set_layout(self.key_centers,key_w)
-        actions=(("⌫ DELETE","DELETE",1.0),("SPACE","SPACE",2.0),
-                 ("CANCEL","CANCEL",1.0),("TYPE INTO APP ↗","INSERT",1.7))
-        gap=10; unit=(width-56-gap*(len(actions)-1))/sum(a[2] for a in actions); x=28
+
+        actions=(("⌫","DELETE",1.0),("SPACE","SPACE",2.6),
+                 ("SWIPE","SWIPE",1.0),("CLOSE","CLOSE",1.0),
+                 ("TYPE INTO APP ↗","INSERT",2.0))
+        gap=10; unit=(width-60-gap*(len(actions)-1))/sum(a[2] for a in actions); x=30
         for label,value,span in actions:
-            button=self.make_key(label,value,((x,24),(unit*span,70)),value=="INSERT")
-            glass.addSubview_(button); x+=unit*span+gap
+            glass.addSubview_(self.make_key(
+                label,value,((x,22),(unit*span,60)),value=="INSERT"))
+            x+=unit*span+gap
+
         self.swipe_trace_view=SwipeTraceView.alloc().initWithController_frame_(
             self,((0,0),(width,height)))
         glass.addSubview_(self.swipe_trace_view)
-        self.keyboard_window.makeKeyAndOrderFront_(None); AppKit.NSApp.activateIgnoringOtherApps_(True)
+
+    @objc.python_method
+    def show_keyboard(self, target):
+        if self.keyboard_window is None:
+            self.build_keyboard()
+        self.keyboard_target=target; self.keyboard_text=""
+        self.keyboard_display.setStringValue_("")
+        self.show_suggestions([])
+        self.keyboard_title.setStringValue_(
+            f"POINT + BLINK TO TYPE INTO {target['app'].upper()}   ·   ESC TO CLOSE")
+        # orderFrontRegardless, never makeKeyAndOrderFront_: the target app must
+        # keep keyboard focus or the insert has nowhere to land.
+        self.keyboard_window.orderFrontRegardless()
+
+    def hideKeyboard_(self, _sender):
+        if self.keyboard_window is not None:
+            self.swipe_recording=False; self.swipe_path=[]
+            self.keyboard_window.orderOut_(None)
+            if self.status_item is not None:
+                self.status_item.button().setTitle_("● Blink Click · active")
+
+    @objc.python_method
+    def keyboard_visible(self):
+        return self.keyboard_window is not None and self.keyboard_window.isVisible()
 
     @objc.python_method
     def make_key(self, title, value, frame, accent=False):
-        button=AppKit.NSButton.alloc().initWithFrame_(frame)
-        button.setTitle_(title); button.setRepresentedObject_(value)
-        button.setTarget_(self); button.setAction_("keyboardKey:")
-        button.setFont_(AppKit.NSFont.boldSystemFontOfSize_(18 if len(title)>2 else 24))
-        button.setBezelStyle_(AppKit.NSBezelStyleRounded)
-        if accent: button.setKeyEquivalent_("\r")
-        return button
+        return KeyView.alloc().initWithFrame_controller_title_value_accent_(
+            frame,self,title,value,accent)
 
-    def keyboardKey_(self, sender):
-        value=str(sender.representedObject())
+    def keyPressed_(self, value):
+        value=str(value)
         if value=="DELETE": self.keyboard_text=self.keyboard_text[:-1]
         elif value=="SPACE": self.keyboard_text+=" "
-        elif value=="CANCEL": self.keyboard_window.orderOut_(None); return
+        elif value=="CLOSE": self.hideKeyboard_(None); return
+        elif value=="SWIPE": self.toggleDrag_(None); return
         elif value=="INSERT":
             text=self.keyboard_text; target=self.keyboard_target
-            self.keyboard_window.orderOut_(None)
+            self.hideKeyboard_(None)
             if text and target: insert_text(int(target["pid"]),text)
             return
         elif value.startswith("SUGGEST:"):
             word=value.split(":",1)[1]; parts=self.keyboard_text.rstrip().split()
             if parts: parts[-1]=word
-            self.keyboard_text=" ".join(parts)+(" " if parts else "")
+            else: parts=[word]
+            self.keyboard_text=" ".join(parts)+" "
             self.show_suggestions([])
         else: self.keyboard_text+=value
         self.keyboard_display.setStringValue_(self.keyboard_text)
