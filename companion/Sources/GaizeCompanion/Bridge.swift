@@ -16,6 +16,8 @@ final class Bridge {
     var onDebugSelect: (() -> Void)?
     var onDebugDictate: ((String) -> Void)?
     var onDebugSend: (() -> Void)?
+    /// The website finished a goal's last step - { "type": "goal_complete", "title": "..." }.
+    var onGoalComplete: ((String) -> Void)?
 
     private var listener: NWListener?
     private var connections: [NWConnection] = []
@@ -97,6 +99,11 @@ final class Bridge {
             DispatchQueue.main.async { [weak self] in
                 self?.onDebugDictate?(text)
             }
+        case "goal_complete":
+            let title = json["title"] as? String ?? ""
+            DispatchQueue.main.async { [weak self] in
+                self?.onGoalComplete?(title)
+            }
         case "debug_send":
             DispatchQueue.main.async { [weak self] in
                 self?.onDebugSend?()
@@ -114,6 +121,12 @@ final class Bridge {
 
     func send(event: String, element: SensedElement) {
         broadcast(["type": event, "role": element.role, "title": element.title])
+    }
+
+    /// A goal step done by voice rather than by gaze-select (a dictated
+    /// name/message, "send") - same event, so the website advances its steps.
+    func sendCompleted(title: String) {
+        broadcast(["type": "action_completed", "role": "", "title": title])
     }
 
     /// Direct voice navigation of the website's own buttons - "home",

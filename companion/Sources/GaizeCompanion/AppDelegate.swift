@@ -161,6 +161,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.performSend()
         }
 
+        bridge.onGoalComplete = { [weak self] title in
+            guard let self else { return }
+            print("AppDelegate: goal complete \"\(title)\"")
+            self.overlay.clear()
+            self.overlay.showBanner(title: "Goal complete", subtitle: title)
+            // After "Message sent." finishes, rather than cutting it off.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                self.output.speak("Goal complete. Nice work!")
+            }
+        }
+
         bridge.onDebugSend = { [weak self] in
             self?.performSend()
         }
@@ -258,6 +269,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Thread.sleep(forTimeInterval: 0.8)
             Dictation.confirmAutocomplete()
             filledRecipientField = axElement
+            // Moves the website's goal on, so its highlight follows to the
+            // message box.
+            bridge.sendCompleted(title: "to:")
 
             // Auto-advance: move straight to the message body and arm it
             // for the next thing said, instead of making the user look at
@@ -272,6 +286,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        if dictationKey == "message_field" {
+            bridge.sendCompleted(title: "message")
+        }
         dictationKey = nil
         dictationElement = nil
     }
@@ -310,6 +327,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dictationElement = nil
         filledRecipientField = nil
         output.speak(language.sentConfirmation)
+        bridge.sendCompleted(title: "send")
     }
 
     /// Resolved at compile time from this source file's location, so "open

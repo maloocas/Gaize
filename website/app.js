@@ -11,8 +11,8 @@ const GOALS = [
     steps: [
       { target: "compose", instruction: "Look at the compose button to start a new conversation" },
       { target: "to:", instruction: "Say the recipient's name, or type it into the To field" },
-      { target: "message", instruction: "Type your message" },
-      { target: "send", instruction: "Look at the send button to send it" },
+      { target: "message", instruction: "Say your message, or type it in the message box" },
+      { target: "send", instruction: "Say “send” (or press Return) to send it" },
     ],
     quiz: [
       {
@@ -444,6 +444,11 @@ function renderGoal() {
   } else {
     stepEl.textContent = "Nice — you finished the steps. Ready to check what you learned?";
     followup.hidden = false;
+    // The companion clears the highlight box and shows a "Goal complete"
+    // popup over the app the user is in.
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "goal_complete", title: currentGoal.title }));
+    }
   }
 }
 
