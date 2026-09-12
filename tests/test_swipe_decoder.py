@@ -20,7 +20,7 @@ def test_gaize_decoder_ranks_ideal_hello_path_first():
     assert decoder.decode(path)[0]=="hello"
 
 
-def test_native_keyboard_records_swipe_during_double_blink_mode():
+def test_native_keyboard_records_swipe_between_blinks():
     source=(Path(__file__).parents[1]/"native"/"controller.py").read_text()
     # The path must be recorded in panel-local coordinates (via panel_point()),
     # not raw screen coordinates: the key centres it gets matched against in
@@ -29,13 +29,14 @@ def test_native_keyboard_records_swipe_during_double_blink_mode():
     # keyboard by coincidence when the panel sat at the screen origin.
     assert "self.swipe_path.append(local)" in source
     assert "local=self.panel_point()" in source
-    assert "results=self.swipe_decoder.decode(self.swipe_path)" in source
+    assert "self.swipe.feed(local[0],local[1]" in source
+    assert "self.swipe.boundary(at)" in source
     assert "class SwipeTraceView" in source
 
 
 def test_python_helpers_are_not_misread_as_objc_selectors():
     source=(Path(__file__).parents[1]/"native"/"controller.py").read_text()
     assert "def makeKey_" not in source
-    assert "def finishSwipe_" not in source
+    assert "def finishSentence_" not in source
     assert "def make_key" in source
-    assert "def finish_swipe" in source
+    assert "def finish_sentence" in source

@@ -204,6 +204,20 @@ def _focused_editable(target_app: dict | None = None) -> dict | None:
             "role": str(subrole or role or "editable")}
 
 
+def post_click(point, down, up, button):
+    """One real-looking click. A down and up posted in the same instant with
+    no click count is dropped by Chromium/Electron apps and some native
+    controls, so mark it as a single click and hold the button briefly."""
+    source = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
+    for kind in (down, up):
+        event = Quartz.CGEventCreateMouseEvent(source, kind, point, button)
+        Quartz.CGEventSetIntegerValueField(event, Quartz.kCGMouseEventClickState, 1)
+        Quartz.CGEventSetIntegerValueField(event, Quartz.kCGMouseEventButtonNumber, button)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+        if kind == down:
+            time.sleep(0.04)
+
+
 def click(show_keyboard: bool = False):
     """Click wherever the pointer is, and report an editable target if any.
 
@@ -215,10 +229,8 @@ def click(show_keyboard: bool = False):
     """
     point = Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
     target_app = _app_at_point(point)
-    for kind in (Quartz.kCGEventLeftMouseDown, Quartz.kCGEventLeftMouseUp):
-        event = Quartz.CGEventCreateMouseEvent(
-            None, kind, point, Quartz.kCGMouseButtonLeft)
-        Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+    post_click(point, Quartz.kCGEventLeftMouseDown, Quartz.kCGEventLeftMouseUp,
+               Quartz.kCGMouseButtonLeft)
     # Focus changes land just after mouse-up, so look only after that settles.
     time.sleep(0.12)
     return _focused_editable(target_app)
