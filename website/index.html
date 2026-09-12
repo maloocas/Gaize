@@ -8,10 +8,10 @@
 <body>
   <div class="page">
     <header class="topbar">
-      <div class="brand">
+      <button class="brand" id="home-link" aria-label="Back to home">
         <span class="brand-mark" aria-hidden="true">◎</span>
         <span class="brand-name">Gaize</span>
-      </div>
+      </button>
       <div class="topbar-right">
         <label class="language-picker">
           <span class="sr-only">Spoken language</span>
@@ -43,6 +43,15 @@
         <ul id="goal-list" class="goal-list"></ul>
       </section>
 
+      <section id="goal-detail" class="panel" hidden>
+        <div class="panel-header">
+          <h2 id="goal-detail-title"></h2>
+          <button class="btn-ghost" id="back-from-detail">Back to goals</button>
+        </div>
+        <ol class="steps-preview" id="steps-preview"></ol>
+        <button class="btn-primary" id="btn-learn">Learn this goal</button>
+      </section>
+
       <section id="active-goal" class="panel" hidden>
         <div class="panel-header">
           <h2 id="active-goal-title"></h2>
@@ -59,6 +68,7 @@
       <section id="quiz" class="panel" hidden>
         <div class="panel-header">
           <h2 id="quiz-heading">Quiz</h2>
+          <button class="btn-ghost" id="cancel-quiz">Back to goals</button>
         </div>
         <div id="quiz-body" aria-live="polite"></div>
       </section>

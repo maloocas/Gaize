@@ -36,9 +36,18 @@ enum AppLanguage: String, CaseIterable {
 
     var openWebsiteKeywords: [String] {
         switch self {
-        case .english: return ["open website", "open the website", "show website", "open goals", "show goals"]
-        case .spanish: return ["abrir sitio web", "abrir el sitio web", "mostrar objetivos"]
-        case .french: return ["ouvrir le site", "ouvrir le site web", "afficher les objectifs"]
+        case .english: return [
+            "open website", "open the website", "show website", "open goals", "show goals",
+            "gaize open", "gaize, open", "hey gaize open", "hey gaize, open",
+        ]
+        case .spanish: return [
+            "abrir sitio web", "abrir el sitio web", "mostrar objetivos",
+            "gaize abre", "gaize, abre", "oye gaize abre",
+        ]
+        case .french: return [
+            "ouvrir le site", "ouvrir le site web", "afficher les objectifs",
+            "gaize ouvre", "gaize, ouvre", "hé gaize ouvre",
+        ]
         }
     }
 
