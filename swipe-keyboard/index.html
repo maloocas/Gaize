@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gaze Swipe Keyboard</title>
+    <link rel="stylesheet" href="./swipe.css" />
+  </head>
+  <body>
+    <div id="kb"></div>
+    <script type="module">
+      import { loadWords } from './decoder.js';
+      import { createSwipeKeyboard } from './keyboard.js';
+
+      const { words, freqs } = await loadWords('./words.txt');
+      const kb = createSwipeKeyboard(document.getElementById('kb'), { words, freqs });
+      window.swipeKeyboard = kb;
+
+      // Mouse stands in for gaze. Hold Space to trace a word, Backspace deletes a word.
+      addEventListener('mousemove', (e) => kb.feed(e.clientX, e.clientY));
+      addEventListener('keydown', (e) => {
+        if (e.repeat) return;
+        if (e.code === 'Space') { e.preventDefault(); kb.start(); }
+        if (e.code === 'Backspace') kb.deleteWord();
+      });
+      addEventListener('keyup', (e) => e.code === 'Space' && kb.end());
+    </script>
+  </body>
+</html>
