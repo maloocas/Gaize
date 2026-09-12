@@ -73,6 +73,33 @@ final class Sensing {
         }
     }
 
+    /// Reports a real mouse click in Messages as a completed action without
+    /// pressing the element again, allowing tutorial steps to advance for
+    /// either mouse or voice activation.
+    @discardableResult
+    func reportPhysicalClick(at point: CGPoint) -> SensedElement? {
+        guard AXIsProcessTrusted() else { return nil }
+
+        var elementRef: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(
+            systemWide,
+            Float(point.x),
+            Float(point.y),
+            &elementRef
+        ) == .success,
+        let element = elementRef else { return nil }
+
+        var pid: pid_t = 0
+        AXUIElementGetPid(element, &pid)
+        guard NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == Self.targetBundleID,
+              let sensed = describe(element) else { return nil }
+
+        print("Sensing: physical click on \"\(sensed.title)\"")
+        onConfirmed?(sensed, element)
+        resetCurrent()
+        return sensed
+    }
+
     /// Whichever element was actually hit most often in the recent window -
     /// see recentHits' doc comment for why this beats "whatever's current."
     private func mostFrequentRecentHit() -> (element: AXUIElement, sensed: SensedElement)? {
@@ -204,10 +231,32 @@ final class Sensing {
             return nil
         }
 
-        guard let targetApp = NSWorkspace.shared.runningApplications.first(where: {
+        var targetApp = NSWorkspace.shared.runningApplications.first(where: {
             $0.bundleIdentifier == Self.targetBundleID
-        }) else {
-            print("Sensing: \(Self.targetAppName) is not running")
+        })
+
+        if targetApp == nil {
+            guard let appURL = NSWorkspace.shared.urlForApplication(
+                withBundleIdentifier: Self.targetBundleID
+            ) else {
+                print("Sensing: could not locate \(Self.targetAppName)")
+                return nil
+            }
+            print("Sensing: launching \(Self.targetAppName)")
+            guard NSWorkspace.shared.open(appURL) else {
+                print("Sensing: failed to launch \(Self.targetAppName)")
+                return nil
+            }
+            for _ in 0..<20 where targetApp == nil {
+                Thread.sleep(forTimeInterval: 0.1)
+                targetApp = NSWorkspace.shared.runningApplications.first(where: {
+                    $0.bundleIdentifier == Self.targetBundleID
+                })
+            }
+        }
+
+        guard let targetApp else {
+            print("Sensing: \(Self.targetAppName) did not finish launching")
             return nil
         }
 

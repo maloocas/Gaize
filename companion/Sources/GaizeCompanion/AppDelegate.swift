@@ -16,6 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let gazeTracker = GazeTracker()
     private let output = Output()
     private let voiceCommands = VoiceCommands()
+    private var highlightGeneration = 0
+    private var globalClickMonitor: Any?
 
     /// Whether to pop up an on-screen keyboard after "compose" is
     /// confirmed - toggleable from the menu, since a teammate is building
@@ -53,13 +55,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         bridge.onHighlightRequest = { [weak self] target in
             guard let self else { return }
-            print("AppDelegate: highlight requested for \"\(target)\"")
-            if let frame = self.sensing.screenFrame(forElementDescribed: target) {
-                print("AppDelegate: found frame \(frame) for \"\(target)\", showing overlay")
-                self.overlay.highlight(frame)
-            } else {
-                print("AppDelegate: no element found matching \"\(target)\" in frontmost app")
-            }
+            self.highlightGeneration += 1
+            let generation = self.highlightGeneration
+            self.overlay.clear()
+            self.highlight(target: target, attempt: 0, generation: generation)
         }
 
         gazeTracker.onGazePoint = { [weak self] point in
@@ -75,10 +74,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         sensing.onConfirmed = { [weak self] element, axElement in
             guard let self else { return }
-            self.bridge.send(event: "action_completed", element: element)
-            self.output.speakConfirmation(for: element)
-
+            // Remove the completed step's ring immediately. The website will
+            // request the next target after it processes action_completed.
+            self.overlay.clear()
             let key = KnowledgePack.matchedEntry(for: element)?.key
+            self.bridge.send(event: "action_completed", element: element, key: key)
+            self.output.speakConfirmation(for: element)
             print("AppDelegate: confirmed key=\(key ?? "nil") showKeyboardOnCompose=\(self.showKeyboardOnCompose)")
 
             if key == "compose", self.showKeyboardOnCompose {
@@ -216,6 +217,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         bridge.start()
         gazeTracker.start()
         voiceCommands.start()
+
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
+            guard let self, let screenHeight = NSScreen.main?.frame.height else { return }
+            let cocoaPoint = NSEvent.mouseLocation
+            let axPoint = CGPoint(x: cocoaPoint.x, y: screenHeight - cocoaPoint.y)
+            // Resolve the element during mouse-down, before the target app
+            // handles the click and replaces controls such as Compose.
+            self.sensing.reportPhysicalClick(at: axPoint)
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        if let globalClickMonitor {
+            NSEvent.removeMonitor(globalClickMonitor)
+        }
+    }
+
+    /// Messages updates its accessibility tree asynchronously after an
+    /// action (Compose revealing To:, Attach opening its picker, and so on).
+    /// Retry briefly so the next tutorial ring follows the UI transition.
+    /// A generation token prevents an older retry from replacing a newer
+    /// highlight if the user advances quickly.
+    private func highlight(target: String, attempt: Int, generation: Int) {
+        guard generation == highlightGeneration else { return }
+        print("AppDelegate: highlight requested for \"\(target)\" attempt=\(attempt + 1)")
+
+        if let frame = sensing.screenFrame(forElementDescribed: target) {
+            print("AppDelegate: found frame \(frame) for \"\(target)\", showing overlay")
+            overlay.highlight(frame)
+            return
+        }
+
+        guard attempt < 11 else {
+            print("AppDelegate: no element found matching \"\(target)\" after retries")
+            return
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            self?.highlight(target: target, attempt: attempt + 1, generation: generation)
+        }
     }
 
     @objc private func quit() {

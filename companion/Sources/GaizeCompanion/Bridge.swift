@@ -127,8 +127,10 @@ final class Bridge {
         }
     }
 
-    func send(event: String, element: SensedElement) {
-        broadcast(["type": event, "role": element.role, "title": element.title])
+    func send(event: String, element: SensedElement, key: String? = nil) {
+        var payload = ["type": event, "role": element.role, "title": element.title]
+        if let key { payload["key"] = key }
+        broadcast(payload)
     }
 
     /// A goal step done by voice rather than by gaze-select (a dictated

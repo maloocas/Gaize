@@ -50,6 +50,12 @@ enum KnowledgePack {
             .spanish: "Esto te permite adjuntar una foto, archivo u otro elemento a tu mensaje.",
             .french: "Ceci vous permet de joindre une photo, un fichier ou un autre élément à votre message.",
         ]),
+        // Messages exposes the attachment (+) button as "add" through AX.
+        Entry(key: "attach", match: "add", explanations: [
+            .english: "This lets you attach a photo, file, or other item to your message.",
+            .spanish: "Esto te permite adjuntar una foto, archivo u otro elemento a tu mensaje.",
+            .french: "Ceci vous permet de joindre une photo, un fichier ou un autre élément à votre message.",
+        ]),
         Entry(key: "camera", match: "camera", explanations: [
             .english: "This lets you take a photo or video to send.",
             .spanish: "Esto te permite tomar una foto o video para enviar.",
@@ -179,6 +185,12 @@ enum KnowledgePack {
     static func matchedEntry(for element: SensedElement) -> Entry? {
         let label = element.title.isEmpty ? element.role : element.title
         let haystack = label.lowercased()
+        // Prefer an exact label before substring matches. This maps the
+        // Messages "add" button to attach without mistaking controls such
+        // as "Add to Reminders" for the attachment button.
+        if let exact = entries.first(where: { haystack == $0.match }) {
+            return exact
+        }
         return entries.first(where: { haystack.contains($0.match) })
     }
 
