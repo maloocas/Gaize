@@ -22,6 +22,11 @@ final class Output: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate
     private var speakingSince: Date?
     private var lastText: String?
     private var lastTextValidUntil = Date.distantPast
+    /// Speech recognition can deliver an older TTS utterance after a newer
+    /// confirmation has already played. Keep several recent utterances so
+    /// dictation can discard all of Gaize's own speech, not just the last one.
+    private var echoHistory: [(text: String, validUntil: Date)] = []
+    private let echoRetention: TimeInterval = 30
     /// Bumped on every new utterance, so a slow live-TTS response for an
     /// older one can't start playing after a newer one.
     private var generation = 0
@@ -45,8 +50,10 @@ final class Output: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate
     /// recognizer can surface our own words ("got it compose") well after we
     /// finished saying them, glued onto the user's next words.
     var lingeringSpokenText: String? {
-        if isSpeaking { return lastText }
-        return Date() < lastTextValidUntil.addingTimeInterval(6) ? lastText : nil
+        let now = Date()
+        echoHistory.removeAll { $0.validUntil < now }
+        let texts = echoHistory.map(\.text)
+        return texts.isEmpty ? nil : texts.joined(separator: " ")
     }
 
     override init() {
@@ -73,6 +80,9 @@ final class Output: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate
         synthesizer.stopSpeaking(at: .immediate)
         speakingSince = Date()
         lastText = text
+        let now = Date()
+        echoHistory.removeAll { $0.validUntil < now }
+        echoHistory.append((text: text, validUntil: now.addingTimeInterval(echoRetention)))
     }
 
     private func endSpeaking() {
