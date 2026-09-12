@@ -18,6 +18,7 @@ import cv2
 import objc
 import Quartz
 
+from accessibility_targets import discover_targets
 from autocomplete import Autocomplete
 from bridge import click, insert_text, press_return
 from gaze_math import GazeCalibration
@@ -42,6 +43,7 @@ KEY_RADIUS = 12.0
 # reliable blinks is hard and the counting gestures are already taken.
 LONG_BLINK_MIN = 0.95     # comfortably past the 0.9s blink ceiling, no overlap
 LONG_BLINK_MAX = 2.60     # beyond this they are resting, not signalling
+SCROLL_DWELL_SECONDS = 0.65
 
 
 def quartz_cursor():
@@ -106,7 +108,9 @@ class CrosshairView(AppKit.NSView):
 
     def drawRect_(self, _rect):
         center=26
-        color=(AppKit.NSColor.colorWithRed_green_blue_alpha_(.82,.38,1,.98)
+        color=(AppKit.NSColor.colorWithWhite_alpha_(.72,.95)
+               if getattr(self.controller,"paused",False) else
+               AppKit.NSColor.colorWithRed_green_blue_alpha_(.82,.38,1,.98)
                if self.controller.drag_mode else
                AppKit.NSColor.colorWithRed_green_blue_alpha_(1,.82,.12,.98)
                if time.monotonic()<self.controller.click_flash_until
@@ -231,6 +235,106 @@ class KeyView(AppKit.NSView):
             ((bounds.size.width-size.width)/2,(bounds.size.height-size.height)/2),attrs)
 
 
+class SafetyKeyView(KeyView):
+    """Large, persistent pause/stop target that remains usable while paused."""
+
+    def drawRect_(self,_rect):
+        bounds=self.bounds()
+        path=AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+            AppKit.NSInsetRect(bounds,2,2),14,14)
+        danger=str(self.keyValue)=="EMERGENCY_STOP"
+        if self.pressed:    fill=(1,.78,.20,1) if not danger else (1,.28,.24,1)
+        elif self.hovering: fill=(.35,.78,1,.95) if not danger else (1,.25,.22,.95)
+        elif danger:        fill=(.72,.10,.12,.94)
+        else:               fill=(.10,.42,.62,.94)
+        AppKit.NSColor.colorWithRed_green_blue_alpha_(*fill).setFill(); path.fill()
+        AppKit.NSColor.colorWithWhite_alpha_(1,.92 if self.hovering else .48).setStroke()
+        path.setLineWidth_(2); path.stroke()
+        attrs={AppKit.NSFontAttributeName:
+                   AppKit.NSFont.systemFontOfSize_weight_(16,AppKit.NSFontWeightBold),
+               AppKit.NSForegroundColorAttributeName:AppKit.NSColor.whiteColor()}
+        label=NSString.stringWithString_(self.keyTitle)
+        size=label.sizeWithAttributes_(attrs)
+        label.drawAtPoint_withAttributes_(
+            ((bounds.size.width-size.width)/2,(bounds.size.height-size.height)/2),attrs)
+
+
+class ScrollZoneView(AppKit.NSView):
+    """A large edge target that shows dwell progress before scrolling."""
+    controller=objc.ivar(); direction=objc.ivar()
+
+    def initWithFrame_controller_direction_(self,frame,controller,direction):
+        self=objc.super(ScrollZoneView,self).initWithFrame_(frame)
+        if self is not None:
+            self.controller=controller; self.direction=int(direction)
+        return self
+
+    def drawRect_(self,_rect):
+        bounds=self.bounds()
+        active=(self.controller.scroll_active_direction==self.direction)
+        hovering=(self.controller.scroll_hover_direction==self.direction)
+        path=AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+            AppKit.NSInsetRect(bounds,2,2),18,18)
+        fill=((.12,.72,.48,.92) if active else
+              (.12,.52,.72,.82) if hovering else (.10,.16,.23,.72))
+        AppKit.NSColor.colorWithRed_green_blue_alpha_(*fill).setFill(); path.fill()
+        AppKit.NSColor.colorWithWhite_alpha_(1,.85 if hovering else .35).setStroke()
+        path.setLineWidth_(2); path.stroke()
+        arrow="▲" if self.direction>0 else "▼"
+        attrs={AppKit.NSFontAttributeName:
+                   AppKit.NSFont.systemFontOfSize_weight_(34,AppKit.NSFontWeightBold),
+               AppKit.NSForegroundColorAttributeName:AppKit.NSColor.whiteColor()}
+        label=NSString.stringWithString_(arrow)
+        size=label.sizeWithAttributes_(attrs)
+        label.drawAtPoint_withAttributes_(
+            ((bounds.size.width-size.width)/2,(bounds.size.height-size.height)/2+8),attrs)
+        caption=NSString.stringWithString_("SCROLL")
+        small={AppKit.NSFontAttributeName:AppKit.NSFont.boldSystemFontOfSize_(11),
+               AppKit.NSForegroundColorAttributeName:
+                   AppKit.NSColor.colorWithWhite_alpha_(1,.82)}
+        cap_size=caption.sizeWithAttributes_(small)
+        caption.drawAtPoint_withAttributes_(((bounds.size.width-cap_size.width)/2,15),small)
+        if hovering and not active:
+            progress=max(0.0,min(1.0,self.controller.scroll_dwell_progress))
+            AppKit.NSColor.colorWithRed_green_blue_alpha_(.20,.88,1,.98).setFill()
+            AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                ((8,7),((bounds.size.width-16)*progress,5)),2.5,2.5).fill()
+
+
+class TargetOverlayView(AppKit.NSView):
+    """Click-through outlines for controls exposed by macOS Accessibility."""
+    controller=objc.ivar()
+
+    def initWithController_frame_(self,controller,frame):
+        self=objc.super(TargetOverlayView,self).initWithFrame_(frame)
+        if self is not None: self.controller=controller
+        return self
+
+    def hitTest_(self,_point):
+        return None
+
+    def drawRect_(self,_rect):
+        if not self.controller.target_boxes_enabled: return
+        screen=self.controller.target_overlay_screen
+        height=screen.size.height
+        colors={
+            "text":AppKit.NSColor.colorWithRed_green_blue_alpha_(.18,.88,1,.92),
+            "navigation":AppKit.NSColor.colorWithRed_green_blue_alpha_(.72,.42,1,.92),
+            "setting":AppKit.NSColor.colorWithRed_green_blue_alpha_(1,.72,.18,.92),
+            "action":AppKit.NSColor.colorWithRed_green_blue_alpha_(.25,1,.55,.92),
+        }
+        for target in self.controller.accessibility_targets:
+            x=target["x"]-screen.origin.x
+            y=height-(target["y"]+target["height"])+screen.origin.y
+            rect=((x,y),(target["width"],target["height"]))
+            if not AppKit.NSIntersectsRect(rect,self.bounds()): continue
+            color=colors.get(target["kind"],colors["action"])
+            color.setStroke()
+            box=AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                AppKit.NSInsetRect(rect,-2,-2),7,7)
+            box.setLineWidth_(2.5); box.stroke()
+
+
 class CalibrationView(AppKit.NSView):
     controller = objc.ivar()
 
@@ -309,7 +413,8 @@ class NativeController(NSObject):
     def init(self):
         self = objc.super(NativeController, self).init()
         if self is None: return None
-        self.running=True; self.control_enabled=True; self.collecting=None; self.failed=False
+        self.running=True; self.control_enabled=True; self.paused=False
+        self.collecting=None; self.failed=False
         self.latest_gaze=None; self.latest_seen=0.0; self.latest_frame=None
         self.failure_reason="Calibration stopped — eyes were not detected. Press R to retry or Escape to exit."
         self.calib_samples=[]; self.calibration=None; self.target_index=0
@@ -326,6 +431,10 @@ class NativeController(NSObject):
         self.autocomplete=Autocomplete(SWIPE_WORDS,CORPUS_FILE,PROFILE_FILE)
         self.swipe_recording=False; self.swipe_path=[]; self.key_centers={}
         self.swipe_trace_view=None
+        self.scroll_hover_direction=0; self.scroll_active_direction=0
+        self.scroll_hover_since=0.0; self.scroll_dwell_progress=0.0
+        self.accessibility_targets=[]; self.target_boxes_enabled=True
+        self.target_scan_running=False
         self.crosshair_view=CrosshairView.alloc().initWithController_(self)
         self.crosshair_window=AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             ((0,0),(52,52)),AppKit.NSWindowStyleMaskBorderless,
@@ -347,6 +456,9 @@ class NativeController(NSObject):
         self.crosshair_window.orderFrontRegardless()
         self.crosshair_timer=NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
             1/60,self,"updateCrosshair:",None,True)
+        self.build_safety_controls()
+        self.build_scroll_controls()
+        self.build_target_overlay()
         # A menu-bar control keeps the app out of the way while providing a
         # visible, mouse-accessible exit in addition to the Escape panic key.
         self.status_item=AppKit.NSStatusBar.systemStatusBar().statusItemWithLength_(
@@ -356,6 +468,12 @@ class NativeController(NSObject):
         mode=AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
             "Blink to click · hold to right click · double blink to drag",None,"")
         self.menu.addItem_(mode); self.menu.addItem_(AppKit.NSMenuItem.separatorItem())
+        self.pause_item=AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Pause Eye Control","togglePause:","p")
+        self.pause_item.setTarget_(self); self.menu.addItem_(self.pause_item)
+        self.target_boxes_item=AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Hide Target Boxes","toggleTargetBoxes:","b")
+        self.target_boxes_item.setTarget_(self); self.menu.addItem_(self.target_boxes_item)
         # Every gesture keeps a non-gesture equivalent. Blink detection can be
         # unreliable under bad lighting, and a right click that only exists as a
         # timed eye hold would simply be unavailable when that happens.
@@ -366,6 +484,9 @@ class NativeController(NSObject):
             "Close Keyboard","hideKeyboard:","k")
         hide_item.setTarget_(self); self.menu.addItem_(hide_item)
         self.menu.addItem_(AppKit.NSMenuItem.separatorItem())
+        emergency_item=AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Emergency Stop","emergencyStop:","")
+        emergency_item.setTarget_(self); self.menu.addItem_(emergency_item)
         quit_item=AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
             "Quit OpenGaze","quit:","q")
         quit_item.setTarget_(self); self.menu.addItem_(quit_item)
@@ -377,7 +498,202 @@ class NativeController(NSObject):
             AppKit.NSEventMaskKeyDown,self.on_global_key)
         threading.Thread(target=self.panic_loop,daemon=True).start()
         self.request_camera_access()
+        self.target_scan_timer=NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            1.75,self,"requestTargetScan:",None,True)
+        self.requestTargetScan_(None)
         return self
+
+    @objc.python_method
+    def build_safety_controls(self):
+        """Keep pause and stop reachable without opening a menu or keyboard."""
+        screen=AppKit.NSScreen.mainScreen().visibleFrame()
+        width,height=350,76
+        origin=(screen.origin.x+screen.size.width-width-18,
+                screen.origin.y+screen.size.height-height-18)
+        panel=AppKit.NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
+            (origin,(width,height)),
+            AppKit.NSWindowStyleMaskBorderless|AppKit.NSWindowStyleMaskNonactivatingPanel,
+            AppKit.NSBackingStoreBuffered,False)
+        panel.setLevel_(AppKit.NSScreenSaverWindowLevel)
+        panel.setFloatingPanel_(True); panel.setHidesOnDeactivate_(False)
+        panel.setOpaque_(False); panel.setBackgroundColor_(AppKit.NSColor.clearColor())
+        panel.setCollectionBehavior_(
+            AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces|
+            AppKit.NSWindowCollectionBehaviorFullScreenAuxiliary|
+            AppKit.NSWindowCollectionBehaviorStationary)
+        glass=AppKit.NSVisualEffectView.alloc().initWithFrame_(((0,0),(width,height)))
+        glass.setMaterial_(AppKit.NSVisualEffectMaterialHUDWindow)
+        glass.setBlendingMode_(AppKit.NSVisualEffectBlendingModeBehindWindow)
+        glass.setState_(AppKit.NSVisualEffectStateActive)
+        glass.setWantsLayer_(True); glass.layer().setCornerRadius_(18)
+        self.pause_safety_key=SafetyKeyView.alloc().initWithFrame_controller_title_value_accent_(
+            ((8,8),(202,60)),self,"Ⅱ  PAUSE","PAUSE",False)
+        stop=SafetyKeyView.alloc().initWithFrame_controller_title_value_accent_(
+            ((218,8),(124,60)),self,"■  STOP","EMERGENCY_STOP",False)
+        glass.addSubview_(self.pause_safety_key); glass.addSubview_(stop)
+        panel.setContentView_(glass); panel.orderFrontRegardless()
+        self.safety_window=panel
+
+    @objc.python_method
+    def build_scroll_controls(self):
+        """Install persistent up/down dwell targets at the right screen edge."""
+        screen=AppKit.NSScreen.mainScreen().visibleFrame()
+        width,height=98,244
+        origin=(screen.origin.x+screen.size.width-width-18,
+                screen.origin.y+(screen.size.height-height)/2)
+        panel=AppKit.NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
+            (origin,(width,height)),
+            AppKit.NSWindowStyleMaskBorderless|AppKit.NSWindowStyleMaskNonactivatingPanel,
+            AppKit.NSBackingStoreBuffered,False)
+        panel.setLevel_(AppKit.NSScreenSaverWindowLevel)
+        panel.setFloatingPanel_(True); panel.setHidesOnDeactivate_(False)
+        panel.setOpaque_(False); panel.setBackgroundColor_(AppKit.NSColor.clearColor())
+        # Scroll events are delivered to the window beneath the pointer. If this
+        # decorative overlay accepts mouse input, it consumes every generated
+        # wheel event itself and Notes/Safari never receive anything. Detection
+        # is geometry-based, so the entire panel can safely be click-through.
+        panel.setIgnoresMouseEvents_(True)
+        panel.setCollectionBehavior_(
+            AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces|
+            AppKit.NSWindowCollectionBehaviorFullScreenAuxiliary|
+            AppKit.NSWindowCollectionBehaviorStationary)
+        glass=AppKit.NSVisualEffectView.alloc().initWithFrame_(((0,0),(width,height)))
+        glass.setMaterial_(AppKit.NSVisualEffectMaterialHUDWindow)
+        glass.setBlendingMode_(AppKit.NSVisualEffectBlendingModeBehindWindow)
+        glass.setState_(AppKit.NSVisualEffectStateActive)
+        glass.setWantsLayer_(True); glass.layer().setCornerRadius_(20)
+        down=ScrollZoneView.alloc().initWithFrame_controller_direction_(
+            ((6,6),(86,112)),self,-1)
+        up=ScrollZoneView.alloc().initWithFrame_controller_direction_(
+            ((6,126),(86,112)),self,1)
+        glass.addSubview_(down); glass.addSubview_(up)
+        panel.setContentView_(glass); panel.orderFrontRegardless()
+        self.scroll_window=panel; self.scroll_zone_views=(up,down)
+        self.scroll_timer=NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            1/30,self,"updateScroll:",None,True)
+
+    @objc.python_method
+    def build_target_overlay(self):
+        screen=AppKit.NSScreen.mainScreen().frame()
+        panel=AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            (screen.origin,screen.size),AppKit.NSWindowStyleMaskBorderless,
+            AppKit.NSBackingStoreBuffered,False)
+        panel.setLevel_(AppKit.NSFloatingWindowLevel)
+        panel.setOpaque_(False); panel.setBackgroundColor_(AppKit.NSColor.clearColor())
+        panel.setHasShadow_(False); panel.setIgnoresMouseEvents_(True)
+        panel.setCollectionBehavior_(
+            AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces|
+            AppKit.NSWindowCollectionBehaviorFullScreenAuxiliary|
+            AppKit.NSWindowCollectionBehaviorStationary)
+        self.target_overlay_screen=screen
+        self.target_overlay_view=TargetOverlayView.alloc().initWithController_frame_(
+            self,((0,0),screen.size))
+        panel.setContentView_(self.target_overlay_view); panel.orderFrontRegardless()
+        self.target_overlay_window=panel
+
+    def toggleTargetBoxes_(self,_sender):
+        self.target_boxes_enabled=not self.target_boxes_enabled
+        self.target_boxes_item.setTitle_(
+            "Hide Target Boxes" if self.target_boxes_enabled else "Show Target Boxes")
+        self.target_overlay_view.setNeedsDisplay_(True)
+
+    def requestTargetScan_(self,_sender):
+        if self.target_scan_running or not self.running or not self.target_boxes_enabled:
+            return
+        self.target_scan_running=True
+        def scan():
+            try: targets=discover_targets(os.getpid())
+            except Exception: targets=[]
+            self.performSelectorOnMainThread_withObject_waitUntilDone_(
+                "applyTargets:",targets,False)
+        threading.Thread(target=scan,daemon=True).start()
+
+    def applyTargets_(self,targets):
+        self.accessibility_targets=list(targets or [])
+        self.target_scan_running=False
+        self.target_overlay_view.setNeedsDisplay_(True)
+
+    @objc.python_method
+    def scroll_direction_at_pointer(self):
+        if getattr(self,"scroll_window",None) is None:
+            return 0
+        point=AppKit.NSEvent.mouseLocation()
+        if not AppKit.NSPointInRect(point,self.scroll_window.frame()):
+            return 0
+        local=self.scroll_window.convertPointFromScreen_(point)
+        if 126 <= local.y <= 238: return 1
+        if 6 <= local.y <= 118: return -1
+        return 0
+
+    @objc.python_method
+    def reset_scroll_state(self):
+        changed=bool(self.scroll_hover_direction or self.scroll_active_direction)
+        self.scroll_hover_direction=0; self.scroll_active_direction=0
+        self.scroll_hover_since=0.0; self.scroll_dwell_progress=0.0
+        if changed:
+            for view in getattr(self,"scroll_zone_views",()):
+                view.setNeedsDisplay_(True)
+
+    def updateScroll_(self,_timer):
+        if (not self.running or self.paused or not self.control_enabled or
+                self.keyboard_visible() or self.drag_mode or self.swipe_recording):
+            self.reset_scroll_state(); return
+        direction=self.scroll_direction_at_pointer()
+        if not direction:
+            self.reset_scroll_state(); return
+        now=time.monotonic()
+        if direction!=self.scroll_hover_direction:
+            self.scroll_hover_direction=direction; self.scroll_active_direction=0
+            self.scroll_hover_since=now; self.scroll_dwell_progress=0.0
+        elapsed=now-self.scroll_hover_since
+        self.scroll_dwell_progress=min(1.0,elapsed/SCROLL_DWELL_SECONDS)
+        if elapsed>=SCROLL_DWELL_SECONDS:
+            self.scroll_active_direction=direction
+            # Start gently, then ramp for long documents without becoming
+            # uncontrollable. Leaving the zone stops on the very next tick.
+            speed=int(min(42,10+(elapsed-SCROLL_DWELL_SECONDS)*16))
+            event=Quartz.CGEventCreateScrollWheelEvent(
+                EVENT_SOURCE,Quartz.kCGScrollEventUnitPixel,1,direction*speed)
+            Quartz.CGEventPost(Quartz.kCGHIDEventTap,event)
+        for view in self.scroll_zone_views: view.setNeedsDisplay_(True)
+
+    @objc.python_method
+    def pointer_over_safety_controls(self):
+        return (getattr(self,"safety_window",None) is not None and
+                AppKit.NSPointInRect(
+                    AppKit.NSEvent.mouseLocation(),self.safety_window.frame()))
+
+    def togglePause_(self,_sender):
+        self.set_paused(not self.paused)
+
+    @objc.python_method
+    def set_paused(self,paused):
+        self.paused=bool(paused)
+        self.control_enabled=not self.paused
+        self.pending_blink=False; self.blink_generation+=1
+        self.long_blink_armed=False; self.long_blink_progress=0.0
+        self.swipe_recording=False; self.swipe_path=[]
+        self.reset_scroll_state()
+        self.release_drag(); self.hideKeyboard_(None)
+        if self.paused:
+            self.status_item.button().setTitle_("Ⅱ OpenGaze · PAUSED")
+            self.pause_item.setTitle_("Resume Eye Control")
+            self.pause_safety_key.keyTitle="▶  RESUME"
+            self.pause_safety_key.keyValue="RESUME"
+        else:
+            self.status_item.button().setTitle_("● Blink Click · active")
+            self.pause_item.setTitle_("Pause Eye Control")
+            self.pause_safety_key.keyTitle="Ⅱ  PAUSE"
+            self.pause_safety_key.keyValue="PAUSE"
+        self.pause_safety_key.setNeedsDisplay_(True)
+        self.crosshair_view.setNeedsDisplay_(True)
+
+    def emergencyStop_(self,_sender):
+        """Immediately neutralize input state, then terminate the controller."""
+        self.pending_blink=False; self.blink_generation+=1
+        self.reset_scroll_state(); self.release_drag()
+        self.running=False; self.control_enabled=False
+        AppKit.NSApp.terminate_(None)
 
     @objc.python_method
     def on_global_key(self, event):
@@ -478,9 +794,10 @@ class NativeController(NSObject):
             pass
 
     def quit_(self, _sender):
+        # Keep the release explicit here as well as in emergencyStop_; this is
+        # the invariant that prevents any exit path leaving macOS mid-drag.
         self.release_drag()
-        self.running=False; self.control_enabled=False
-        AppKit.NSApp.terminate_(None)
+        self.emergencyStop_(_sender)
 
     def updateCrosshair_(self, _timer):
         point=AppKit.NSEvent.mouseLocation()
@@ -514,6 +831,15 @@ class NativeController(NSObject):
 
     @objc.python_method
     def register_blink(self, now):
+        if self.paused:
+            # While paused, one blink may operate only the persistent safety
+            # strip. All other clicks and every multi-blink gesture are inert.
+            if self.pointer_over_safety_controls():
+                self.pending_blink=True; self.pending_blink_at=now
+                self.blink_generation+=1
+                self.performSelector_withObject_afterDelay_(
+                    "commitBlink:",self.blink_generation,.18)
+            return
         if self.pending_blink and now-self.pending_blink_at <= .65:
             self.pending_blink=False; self.blink_generation+=1
             self.performSelectorOnMainThread_withObject_waitUntilDone_(
@@ -528,6 +854,7 @@ class NativeController(NSObject):
 
     def handleLongBlink_(self, _timestamp):
         """A deliberate long hold means right click."""
+        if self.paused: return
         self.rightClick_(None)
 
     def rightClick_(self, _sender):
@@ -569,9 +896,14 @@ class NativeController(NSObject):
     def commitBlink_(self, generation):
         if not self.pending_blink or int(generation)!=self.blink_generation: return
         self.pending_blink=False
+        on_safety=self.pointer_over_safety_controls()
+        if self.paused and not on_safety: return
+        if self.scroll_direction_at_pointer(): return
         self.flashCrosshair_(None)
         on_keyboard=self.pointer_over_keyboard()
         target=click(show_keyboard=False)
+        if on_safety:
+            return          # a safety action must never reopen the keyboard
         if on_keyboard:
             return          # the panel's own key handling deals with this click
         if target and int(target["pid"]) != os.getpid(): self.show_keyboard(target)
@@ -795,7 +1127,11 @@ class NativeController(NSObject):
 
     def keyPressed_(self, value):
         value=str(value)
-        if value=="DELETE": self.keyboard_text=self.keyboard_text[:-1]
+        if value in ("PAUSE","RESUME"):
+            self.togglePause_(None); return
+        elif value=="EMERGENCY_STOP": self.emergencyStop_(None); return
+        elif self.paused: return
+        elif value=="DELETE": self.keyboard_text=self.keyboard_text[:-1]
         elif value=="SPACE": self.keyboard_text+=" "
         elif value=="CLOSE": self.hideKeyboard_(None); return
         elif value=="SWIPE": self.toggleDrag_(None); return
@@ -835,7 +1171,10 @@ class NativeController(NSObject):
     def process(self,gaze,ear,now):
         self.latest_gaze=gaze; self.latest_seen=now
         if ear>.14: self.open_ears.append(ear)
-        if not self.control_enabled: return
+        # Blink detection stays alive while paused solely so the large RESUME
+        # target can be selected without hands. commitBlink_ blocks the rest of
+        # the computer, and long/double-blink actions are disabled while paused.
+        if not self.control_enabled and not self.paused: return
         ordered=sorted(self.open_ears); threshold=(ordered[len(ordered)//2]*.72) if ordered else .20
         if ear<threshold:
             self.closed_frames+=1
