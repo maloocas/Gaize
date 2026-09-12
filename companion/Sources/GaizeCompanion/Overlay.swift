@@ -57,6 +57,71 @@ final class Overlay {
     func clear() {
         window?.orderOut(nil)
     }
+
+    private var banner: NSWindow?
+
+    /// A brief "Goal complete" style popup, centered near the top of the
+    /// screen over whatever app the user is in - they're usually in
+    /// Messages, not looking at the website, when a goal finishes.
+    func showBanner(title: String, subtitle: String, duration: TimeInterval = 3.5) {
+        guard let screen = NSScreen.main else { return }
+        banner?.orderOut(nil)
+
+        let size = CGSize(width: 420, height: 110)
+        let frame = CGRect(
+            x: screen.frame.midX - size.width / 2,
+            y: screen.frame.maxY - size.height - 140,
+            width: size.width, height: size.height
+        )
+        let panel = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.level = .screenSaver
+        panel.ignoresMouseEvents = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        panel.hasShadow = true
+
+        let background = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
+        background.material = .hudWindow
+        background.state = .active
+        background.wantsLayer = true
+        background.layer?.cornerRadius = 18
+        background.layer?.masksToBounds = true
+
+        let titleLabel = NSTextField(labelWithString: "✓  " + title)
+        titleLabel.font = .systemFont(ofSize: 24, weight: .bold)
+        titleLabel.textColor = .systemGreen
+        let subtitleLabel = NSTextField(labelWithString: subtitle)
+        subtitleLabel.font = .systemFont(ofSize: 15, weight: .medium)
+        subtitleLabel.textColor = .labelColor
+        subtitleLabel.lineBreakMode = .byTruncatingTail
+
+        let stack = NSStackView(views: [titleLabel, subtitleLabel])
+        stack.orientation = .vertical
+        stack.alignment = .centerX
+        stack.spacing = 6
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        background.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: background.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: background.centerYAnchor),
+            stack.widthAnchor.constraint(lessThanOrEqualTo: background.widthAnchor, constant: -32),
+        ])
+
+        panel.contentView = background
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { $0.duration = 0.2; panel.animator().alphaValue = 1 }
+        banner = panel
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self, weak panel] in
+            guard let panel else { return }
+            NSAnimationContext.runAnimationGroup({ $0.duration = 0.3; panel.animator().alphaValue = 0 }) {
+                panel.orderOut(nil)
+                if self?.banner === panel { self?.banner = nil }
+            }
+        }
+    }
 }
 
 private final class RingView: NSView {
