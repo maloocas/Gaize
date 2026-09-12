@@ -17,6 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let output = Output()
     private let voiceCommands = VoiceCommands()
     private var highlightGeneration = 0
+    /// The website step currently highlighted in Messages. Unrelated mouse
+    /// clicks must not clear this target or advance the tutorial.
+    private var highlightedTarget: String?
     private var globalClickMonitor: Any?
 
     /// Whether to pop up an on-screen keyboard after "compose" is
@@ -56,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         bridge.onHighlightRequest = { [weak self] target in
             guard let self else { return }
+            self.highlightedTarget = target
             self.highlightGeneration += 1
             let generation = self.highlightGeneration
             self.overlay.clear()
@@ -75,10 +79,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         sensing.onConfirmed = { [weak self] element, axElement in
             guard let self else { return }
+            let key = KnowledgePack.matchedEntry(for: element)?.key
+            guard self.matchesHighlightedTarget(element, key: key) else {
+                print("AppDelegate: ignoring unrelated click on \(element.title.isEmpty ? element.role : element.title), current target=\(self.highlightedTarget ?? "none")")
+                return
+            }
             // Remove the completed step's ring immediately. The website will
             // request the next target after it processes action_completed.
             self.overlay.clear()
-            let key = KnowledgePack.matchedEntry(for: element)?.key
             self.bridge.send(event: "action_completed", element: element, key: key)
             self.output.speakConfirmation(for: element)
             print("AppDelegate: confirmed key=\(key ?? "nil") showKeyboardOnCompose=\(self.showKeyboardOnCompose)")
@@ -233,12 +241,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         bridge.onClearHighlight = { [weak self] in
+            self?.highlightedTarget = nil
             self?.overlay.clear()
         }
 
         bridge.onGoalComplete = { [weak self] title in
             guard let self else { return }
             print("AppDelegate: goal complete \"\(title)\"")
+            self.highlightedTarget = nil
             self.overlay.clear()
             self.overlay.showBanner(title: "Goal complete", subtitle: title)
             // After "Message sent." finishes, rather than cutting it off.
@@ -325,6 +335,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
             self?.highlight(target: target, attempt: attempt + 1, generation: generation)
         }
+    }
+
+    /// The website advances only when the selected element matches its
+    /// current step. Keep that same boundary in the companion so an
+    /// unrelated physical click cannot clear the user's current target.
+    private func matchesHighlightedTarget(_ element: SensedElement, key: String?) -> Bool {
+        guard let target = highlightedTarget?.lowercased(), !target.isEmpty else {
+            return true
+        }
+        if target == "*" { return true }
+
+        let title = element.title.lowercased()
+        let canonicalKey: String
+        switch key {
+        case "to_field": canonicalKey = "to:"
+        case "message_field": canonicalKey = "message"
+        case let key where key != nil: canonicalKey = key!.replacingOccurrences(of: "_", with: " ")
+        default: canonicalKey = ""
+        }
+        return title.contains(target) || canonicalKey == target
     }
 
     @objc private func quit() {
