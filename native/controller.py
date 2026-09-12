@@ -262,7 +262,10 @@ class NativeController(NSObject):
             if not good: continue
             self.latest_frame=encoded.tobytes()
             data=NSData.dataWithBytes_length_(encoded.tobytes(),encoded.size)
-            handler=Vision.VNImageRequestHandler.alloc().initWithData_options_(data,{})
+            # macOS 27 raises NSInvalidArgumentException for an empty bridged
+            # Python dictionary here ("key does not exist"). Nil correctly
+            # selects Vision's default image options on every supported macOS.
+            handler=Vision.VNImageRequestHandler.alloc().initWithData_options_(data,None)
             succeeded,_=handler.performRequests_error_([request],None)
             results=request.results() if succeeded else None
             metrics=vision_eye_metrics(results[0]) if results else None
