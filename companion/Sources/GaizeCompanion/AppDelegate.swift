@@ -170,6 +170,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.answerQuestion(question)
         }
 
+        bridge.onClearHighlight = { [weak self] in
+            self?.overlay.clear()
+        }
+
         bridge.onGoalComplete = { [weak self] title in
             guard let self else { return }
             print("AppDelegate: goal complete \"\(title)\"")

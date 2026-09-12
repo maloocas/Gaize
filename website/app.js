@@ -480,6 +480,7 @@ function connect() {
     setStatus(true, "Connected to Gaize");
     requestSetLanguage(selectedLanguage);
     reportState();
+    if (mode !== "goal") clearHighlight();
   });
   socket.addEventListener("close", () => {
     setStatus(false, "Waiting for Gaize…");
@@ -499,6 +500,13 @@ function setStatus(connected, text) {
 function requestSetLanguage(languageCode) {
   if (!socket || socket.readyState !== WebSocket.OPEN) return;
   socket.send(JSON.stringify({ type: "set_language", language: languageCode }));
+}
+
+// The highlight box only belongs to an active goal - leaving it (home,
+// goal detail, quiz, scenario) removes the box from the screen.
+function clearHighlight() {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+  socket.send(JSON.stringify({ type: "clear_highlight" }));
 }
 
 function requestHighlight(target) {
@@ -571,6 +579,7 @@ function handleVoiceAction(action) {
 
 function renderGoalList() {
   mode = "goal-list";
+  clearHighlight();
   show("intro", "goals");
   hide("goal-detail", "active-goal", "quiz");
 
@@ -597,6 +606,7 @@ function renderGoalList() {
 function showGoalDetail(goal) {
   currentGoal = goal;
   mode = "goal-detail";
+  clearHighlight();
   hide("intro", "goals", "active-goal", "quiz");
   show("goal-detail");
 
@@ -659,6 +669,7 @@ function renderStepsTrack() {
 
 function startQuiz() {
   mode = "quiz";
+  clearHighlight();
   quizIndex = 0;
   quizAnswers = [];
   hide("goal-detail", "active-goal");
