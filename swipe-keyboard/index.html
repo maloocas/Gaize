@@ -11,7 +11,7 @@
     <script type="module">
       import { loadWords } from './decoder.js';
       import { createSwipeKeyboard } from './keyboard.js';
-      import { decodeSentence } from './llm.js';
+      import { buildPrompt, decodeSentence } from './llm.js';
 
       const { words, freqs } = await loadWords('./words.txt');
       const exitEl = document.createElement('div');
@@ -54,14 +54,20 @@
         const slots = kb.getSlots();
         kb.clear();
         if (!slots.length) return;
-        textEl.textContent = `${text} …`;
+        // Log what was sent (top 8 per slot, as in llm.js) and append the model's output below it.
+        const entry = document.createElement('div');
+        entry.textContent = `IN:\n${buildPrompt(slots.map((s) => ({ ...s, candidates: s.candidates.slice(0, 8) })), text)}\nOUT: …`;
+        textEl.append(entry);
+        textEl.scrollTop = textEl.scrollHeight;
+        const prior = text;
         try {
-          const sentence = await decodeSentence(slots, { priorText: text });
+          const sentence = await decodeSentence(slots, { priorText: prior });
           text = `${text} ${sentence}`.trim();
-          textEl.textContent = text;
+          entry.textContent = entry.textContent.replace(/OUT: …$/, `OUT: ${sentence}`);
         } catch (err) {
-          textEl.textContent = `${text} [LLM error: ${err.message}]`;
+          entry.textContent = entry.textContent.replace(/OUT: …$/, `OUT: [LLM error: ${err.message}]`);
         }
+        textEl.scrollTop = textEl.scrollHeight;
       }
     </script>
   </body>
