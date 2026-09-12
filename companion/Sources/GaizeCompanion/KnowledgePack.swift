@@ -137,6 +137,19 @@ enum KnowledgePack {
             .spanish: "Esto agrega un efecto visual divertido a tu mensaje, como globos o confeti.",
             .french: "Ceci ajoute un effet visuel amusant à votre message, comme des ballons ou des confettis.",
         ]),
+        Entry(key: "to_field", match: "to:", explanations: [
+            .english: "This is where you type or say who you're sending the message to.",
+            .spanish: "Aquí escribes o dices a quién le estás enviando el mensaje.",
+            .french: "C'est ici que vous tapez ou dites à qui vous envoyez le message.",
+        ]),
+        // "message_field" must come after "message effects" and "new
+        // message" - .first(where:) stops at the first match, and both of
+        // those titles contain the plain word "message".
+        Entry(key: "message_field", match: "message", explanations: [
+            .english: "This is where you type your message before sending it.",
+            .spanish: "Aquí escribes tu mensaje antes de enviarlo.",
+            .french: "C'est ici que vous écrivez votre message avant de l'envoyer.",
+        ]),
 
         // Gaize's own website buttons, not Messages.
         Entry(key: "home", match: "back to home", explanations: [
