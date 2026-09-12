@@ -9,7 +9,7 @@ cd swipe-keyboard
 python3 -m http.server 8000
 ```
 
-Open http://localhost:8000. Hold **Space**, move the mouse across the letters of a word, then release. **Backspace** deletes the last word. Click a suggestion to replace the last word.
+Open http://localhost:8000. **Space** stands in for a blink. Each press ends the current word, and recording for the next word starts 0.5 s later. That gap gives you time to move to the next word's first letter. Your first press only starts recording. **Backspace** deletes the last word. Click a suggestion to replace the last word.
 
 ## How it works
 
@@ -29,6 +29,7 @@ The decoder expects positions in viewport coordinates.
 ```js
 const kb = createSwipeKeyboard(el, await loadWords('./words.txt'));
 kb.feed(x, y); // send every gaze sample
-kb.start();    // start recording a word
-kb.end();      // stop recording, decode the word, and type it
+kb.boundary(); // call on each blink: ends the current word, starts the next after 500 ms
+kb.start();    // or control recording directly
+kb.end();
 ```

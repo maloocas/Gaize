@@ -16,14 +16,14 @@
       const kb = createSwipeKeyboard(document.getElementById('kb'), { words, freqs });
       window.swipeKeyboard = kb;
 
-      // Mouse stands in for gaze. Hold Space to trace a word, Backspace deletes a word.
+      // Mouse stands in for gaze, Space stands in for a blink: each press ends the
+      // current word and starts the next 0.5 s later. Backspace deletes a word.
       addEventListener('mousemove', (e) => kb.feed(e.clientX, e.clientY));
       addEventListener('keydown', (e) => {
         if (e.repeat) return;
-        if (e.code === 'Space') { e.preventDefault(); kb.start(); }
+        if (e.code === 'Space') { e.preventDefault(); kb.boundary(); }
         if (e.code === 'Backspace') kb.deleteWord();
       });
-      addEventListener('keyup', (e) => e.code === 'Space' && kb.end());
     </script>
   </body>
 </html>

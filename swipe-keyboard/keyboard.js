@@ -62,6 +62,7 @@ export function createSwipeKeyboard(root, { words, freqs, accuracy = 1.5 }) {
   }
 
   let last = null;
+  let pending = null;
   return {
     feed(x, y) {
       last = { x, y };
@@ -81,6 +82,13 @@ export function createSwipeKeyboard(root, { words, freqs, accuracy = 1.5 }) {
         alternates = results.slice(1).map((r) => r.word);
       }
       render();
+    },
+    // Single word-break input (a blink later): ends the current word, then starts
+    // recording the next one after gapMs so the eyes can move to its first letter.
+    boundary(gapMs = 500) {
+      clearTimeout(pending);
+      if (path) this.end();
+      pending = setTimeout(() => this.start(), gapMs);
     },
     deleteWord() {
       text.pop();
