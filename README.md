@@ -66,6 +66,9 @@ any time; calibration also has a visible red Exit button.
 
 On first launch, macOS may request Camera, Accessibility, and Input Monitoring
 permission for Terminal. Grant them in System Settings, then restart the command.
+If calibration reports that camera access is denied, enable OpenGaze or Terminal
+under **System Settings → Privacy & Security → Camera**, quit with Escape, and
+launch again.
 
 The bridge listens on `127.0.0.1:8766` (port `8765` was retired to avoid a
 collision with older bridge processes).
