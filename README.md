@@ -62,7 +62,8 @@ normal mouse or trackpad, then blink to click at its current position. Clicking
 an editable field opens the large on-screen keyboard. Its oversized keys are
 selected with pointer movement plus blink-clicks; physical typing is not
 required. A click-through cyan crosshair shows the exact aim point in every app
-and flashes yellow when a blink click fires. Press Escape once or choose
+and flashes yellow when a blink click fires. Double blink to press-and-hold for
+dragging (the crosshair turns purple); double blink again to release. Press Escape once or choose
 **Quit OpenGaze** from the menu-bar item to stop at any time.
 
 On first launch, macOS may request Camera, Accessibility, and Input Monitoring

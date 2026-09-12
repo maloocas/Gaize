@@ -5,18 +5,29 @@ import time
 import tkinter as tk
 
 import Quartz
+import ApplicationServices as AS
 from AppKit import NSApplicationActivateIgnoringOtherApps, NSRunningApplication
 
 
 def post_text(text: str) -> None:
+    source=Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
     for start in range(0, len(text), 20):
         chunk = text[start:start + 20]
-        down = Quartz.CGEventCreateKeyboardEvent(None, 0, True)
+        down = Quartz.CGEventCreateKeyboardEvent(source, 0, True)
         Quartz.CGEventKeyboardSetUnicodeString(down, len(chunk), chunk)
         Quartz.CGEventPost(Quartz.kCGHIDEventTap, down)
-        Quartz.CGEventPost(
-            Quartz.kCGHIDEventTap,
-            Quartz.CGEventCreateKeyboardEvent(None, 0, False))
+        up=Quartz.CGEventCreateKeyboardEvent(source,0,False)
+        Quartz.CGEventKeyboardSetUnicodeString(up,len(chunk),chunk)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap,up)
+
+
+def set_focused_text(pid: int, text: str) -> bool:
+    """Insert through Accessibility; unlike key events this survives refocus."""
+    app=AS.AXUIElementCreateApplication(pid)
+    error,focused=AS.AXUIElementCopyAttributeValue(app,"AXFocusedUIElement",None)
+    if error or focused is None: return False
+    # AXSelectedText replaces the current selection or inserts at the caret.
+    return AS.AXUIElementSetAttributeValue(focused,"AXSelectedText",text)==0
 
 
 class GazeKeyboard:
@@ -24,26 +35,28 @@ class GazeKeyboard:
         self.pid = pid
         self.root = tk.Tk()
         self.root.title(f"OpenGaze Keyboard — {app_name}")
-        self.root.configure(bg="#0e1116")
+        self.root.configure(bg="#162536")
         self.root.attributes("-topmost", True)
+        self.root.attributes("-alpha", .94)
         width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
         height = min(570, int(screen_height * 0.5))
         self.root.geometry(f"{width}x{height}+0+{screen_height-height}")
         self.text = tk.StringVar()
-        tk.Label(self.root, text=f"Typing into {app_name}", bg="#0e1116",
-                 fg="#72c5ff", font=("Helvetica", 13, "bold")).pack(pady=(12, 0))
+        tk.Label(self.root, text=f"◉  POINT + BLINK TO TYPE INTO {app_name}", bg="#162536",
+                 fg="#bfeaff", font=("Helvetica", 13, "bold")).pack(pady=(12, 0))
         entry = tk.Entry(self.root, textvariable=self.text,
-                         font=("Helvetica", 30), bg="white", fg="#101820")
+                         font=("Helvetica", 30), bg="#eaf7ff", fg="#10283a",
+                         relief="flat", highlightthickness=2, highlightbackground="#ffffff")
         entry.pack(fill="x", padx=24, pady=12, ipady=12)
         entry.focus_set()
         for row in ("QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"):
-            frame = tk.Frame(self.root, bg="#0e1116")
+            frame = tk.Frame(self.root, bg="#162536")
             frame.pack(fill="x", padx=28, pady=4)
             for letter in row:
                 self._button(frame, letter, lambda v=letter.lower(): self.insert(v)).pack(
                     side="left", expand=True, fill="both", padx=4)
-        actions = tk.Frame(self.root, bg="#0e1116")
+        actions = tk.Frame(self.root, bg="#162536")
         actions.pack(fill="both", expand=True, padx=28, pady=9)
         for label, command in (("⌫ DELETE", self.delete),
                                ("SPACE", lambda: self.insert(" ")),
@@ -59,8 +72,8 @@ class GazeKeyboard:
     def _button(parent, label, command, small=False, accent=False):
         return tk.Button(parent, text=label, command=command,
                          font=("Helvetica", 15 if small else 22, "bold"),
-                         bg="#1677ff" if accent else "#232b34", fg="white",
-                         activebackground="#ffd23f", activeforeground="#111",
+                         bg="#39aee8" if accent else "#b8d9ec",
+                         fg="#082033", activebackground="#ffffff", activeforeground="#07131c",
                          relief="flat", bd=0, padx=10, pady=13,
                          highlightthickness=2, highlightbackground="#3b4652")
 
@@ -76,8 +89,8 @@ class GazeKeyboard:
         target = NSRunningApplication.runningApplicationWithProcessIdentifier_(self.pid)
         if target is not None:
             target.activateWithOptions_(NSApplicationActivateIgnoringOtherApps)
-            time.sleep(0.25)
-            post_text(text)
+            time.sleep(0.35)
+            if not set_focused_text(self.pid,text): post_text(text)
         self.root.destroy()
 
     def run(self) -> None:
