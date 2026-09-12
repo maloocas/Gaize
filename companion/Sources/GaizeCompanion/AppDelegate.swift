@@ -127,8 +127,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.bridge.sendAction(action)
         }
 
+        // Armed explicitly (after selecting a text field / auto-advancing to
+        // the message body), or implicitly whenever a new message's To:
+        // field has focus - so just saying a contact's name fills it in.
         voiceCommands.isDictationModeActive = { [weak self] in
-            self?.dictationElement != nil
+            guard let self else { return false }
+            return self.dictationElement != nil || self.sensing.focusedRecipientField() != nil
         }
 
         voiceCommands.onDictate = { [weak self] text in
@@ -178,8 +182,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyboardMenuItem?.state = showKeyboardOnCompose ? .on : .off
     }
 
-    private func performDictation(_ text: String) {
+    private func performDictation(_ spoken: String) {
+        if dictationElement == nil, let recipientField = sensing.focusedRecipientField() {
+            dictationKey = "to_field"
+            dictationElement = recipientField
+        }
         guard let axElement = dictationElement else { return }
+        // A contact name is a few words at most. Longer utterances are
+        // background speech (music, people talking nearby) that happened to
+        // end while the To: field had focus - never type those as a recipient.
+        if dictationKey == "to_field", spoken.split(separator: " ").count > 4 {
+            print("AppDelegate: ignoring \"\(spoken)\" for To: - too long to be a contact name")
+            return
+        }
+        // Contact names read better capitalized ("lucas ma" -> "Lucas Ma");
+        // message text is typed as heard.
+        let text = dictationKey == "to_field" ? spoken.capitalized : spoken
         print("AppDelegate: dictating \"\(text)\" into \(dictationKey ?? "?")")
 
         // Same root cause as the synthesized-click bug: a posted keystroke
