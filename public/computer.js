@@ -19,7 +19,7 @@ function say(text) {
 }
 
 async function bridge(path, body = {}) {
-  const res = await fetch(`http://127.0.0.1:8765/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const res = await fetch(`http://127.0.0.1:8766/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!res.ok) throw new Error("bridge unavailable");
   return res.json();
 }
