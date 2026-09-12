@@ -10,9 +10,10 @@ final class Bridge {
 
     var onHighlightRequest: ((String) -> Void)?
     var onSetLanguage: ((String) -> Void)?
-    /// Debug-only: triggers the same thing "explain" (the voice command)
-    /// does, for testing without needing to actually speak.
+    /// Debug-only: triggers the same thing "explain"/"select" (the voice
+    /// commands) do, for testing without needing to actually speak.
     var onDebugExplain: (() -> Void)?
+    var onDebugSelect: (() -> Void)?
 
     private var listener: NWListener?
     private var connections: [NWConnection] = []
@@ -85,13 +86,26 @@ final class Bridge {
             DispatchQueue.main.async { [weak self] in
                 self?.onDebugExplain?()
             }
+        case "debug_select":
+            DispatchQueue.main.async { [weak self] in
+                self?.onDebugSelect?()
+            }
         default:
             break
         }
     }
 
     func send(event: String, element: SensedElement) {
-        let payload: [String: Any] = ["type": event, "role": element.role, "title": element.title]
+        broadcast(["type": event, "role": element.role, "title": element.title])
+    }
+
+    /// Direct voice navigation of the website's own buttons - "home",
+    /// "back", "learn", "quiz", "scenario".
+    func sendAction(_ action: String) {
+        broadcast(["type": "voice_action", "action": action])
+    }
+
+    private func broadcast(_ payload: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
 
         let metadata = NWProtocolWebSocket.Metadata(opcode: .text)

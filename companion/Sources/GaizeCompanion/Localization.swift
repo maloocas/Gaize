@@ -55,6 +55,50 @@ enum AppLanguage: String, CaseIterable {
         }
     }
 
+    /// Website navigation, spoken directly (not tied to gaze/AX accuracy) -
+    /// sent to the website as a "voice_action" bridge message and handled
+    /// by its own JS, since it already knows exactly which function each
+    /// button calls.
+    var homeKeywords: [String] {
+        switch self {
+        case .english: return ["go home", "home"]
+        case .spanish: return ["ir a inicio", "inicio"]
+        case .french: return ["aller à l'accueil", "accueil"]
+        }
+    }
+
+    var backToGoalsKeywords: [String] {
+        switch self {
+        case .english: return ["back to goals", "go back"]
+        case .spanish: return ["volver a objetivos", "regresar"]
+        case .french: return ["retour aux objectifs", "retour"]
+        }
+    }
+
+    var learnKeywords: [String] {
+        switch self {
+        case .english: return ["learn this goal", "start learning", "learn"]
+        case .spanish: return ["aprender este objetivo", "aprender"]
+        case .french: return ["apprendre cet objectif", "apprendre"]
+        }
+    }
+
+    var takeQuizKeywords: [String] {
+        switch self {
+        case .english: return ["take a quiz", "take quiz", "start quiz"]
+        case .spanish: return ["hacer un cuestionario", "empezar cuestionario"]
+        case .french: return ["faire un quiz", "commencer le quiz"]
+        }
+    }
+
+    var tryScenarioKeywords: [String] {
+        switch self {
+        case .english: return ["try a scenario", "try scenario", "start scenario"]
+        case .spanish: return ["probar un escenario", "empezar escenario"]
+        case .french: return ["essayer un scénario", "commencer le scénario"]
+        }
+    }
+
     var genericExplanationTemplate: (String) -> String {
         switch self {
         case .english: return { "This is the \($0)." }

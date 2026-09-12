@@ -2,16 +2,20 @@ import AVFoundation
 
 /// Spoken output, backed by KnowledgePack for explanation text.
 ///
-/// Explanations for known elements play a pre-rendered Chatterbox TTS clip
-/// (Resources/audio/<language>/<key>.wav - see chatterbox/generate_gaize_audio.py
-/// in the sibling chatterbox repo) when one exists for the current language,
-/// since Chatterbox sounds far more natural than the system voice but is far
-/// too slow (seconds per line, CPU) to run live. Everything else - the
-/// generic "this is the X" fallback, and all "Selecting X" confirmations,
-/// which both involve dynamic element names we can't pre-render - uses
-/// AVSpeechSynthesizer with the best installed system voice.
+/// Three tiers, in preference order:
+/// 1. A pre-rendered Chatterbox TTS clip (Resources/audio/<language>/<key>.wav
+///    - see chatterbox/generate_gaize_audio.py in the sibling chatterbox
+///    repo) for anything in KnowledgePack, in the current language.
+/// 2. The live Chatterbox server (chatterbox/tts_server.py, English only,
+///    must be started separately - http://127.0.0.1:8766) for dynamic text
+///    that can't be pre-rendered (confirmations like "Selecting X", the
+///    generic "this is the X" fallback) - a few seconds slower than (1) but
+///    still Chatterbox's natural voice rather than the robotic system one.
+/// 3. AVSpeechSynthesizer with the best installed system voice, whenever
+///    neither of the above is available (non-English, or the live server
+///    isn't running).
 ///
-/// Tracks isSpeaking (across both playback paths) so VoiceCommands can mute
+/// Tracks isSpeaking (across all three paths) so VoiceCommands can mute
 /// itself while this is talking - without that, the mic picks up our own
 /// TTS through the speakers and transcribes it right back as a command
 /// (e.g. "Selecting compose" contains "select", re-triggering it).
@@ -19,6 +23,8 @@ final class Output: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate
     private let synthesizer = AVSpeechSynthesizer()
     private var audioPlayer: AVAudioPlayer?
     private(set) var isSpeaking = false
+
+    private static let liveServerURL = URL(string: "http://127.0.0.1:8766/speak")!
 
     override init() {
         super.init()
@@ -65,8 +71,56 @@ final class Output: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate
         }
     }
 
+    /// Dynamic text (not in KnowledgePack): tries the live Chatterbox
+    /// server first (English only), falling back to the system voice if
+    /// it's not running, times out, or errors.
     func speak(_ text: String) {
-        print("Output: speaking \"\(text)\"")
+        let language = AppSettings.shared.language
+        guard language == .english else {
+            speakSystemVoice(text)
+            return
+        }
+
+        print("Output: requesting live TTS for \"\(text)\"")
+        isSpeaking = true
+
+        var request = URLRequest(url: Self.liveServerURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["text": text])
+        request.timeoutInterval = 6
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let self else { return }
+
+            guard error == nil, let data, !data.isEmpty,
+                  (response as? HTTPURLResponse)?.statusCode == 200 else {
+                print("Output: live TTS server unavailable (\(error?.localizedDescription ?? "bad response")), falling back to system voice")
+                DispatchQueue.main.async { self.speakSystemVoice(text) }
+                return
+            }
+
+            DispatchQueue.main.async {
+                self.playLiveAudio(data, text: text)
+            }
+        }.resume()
+    }
+
+    private func playLiveAudio(_ data: Data, text: String) {
+        do {
+            let player = try AVAudioPlayer(data: data)
+            player.delegate = self
+            audioPlayer = player
+            print("Output: playing live TTS for \"\(text)\"")
+            player.play()
+        } catch {
+            print("Output: failed to play live TTS audio: \(error), falling back to system voice")
+            speakSystemVoice(text)
+        }
+    }
+
+    private func speakSystemVoice(_ text: String) {
+        print("Output: speaking (system voice) \"\(text)\"")
         audioPlayer?.stop()
         synthesizer.stopSpeaking(at: .word)
         isSpeaking = true

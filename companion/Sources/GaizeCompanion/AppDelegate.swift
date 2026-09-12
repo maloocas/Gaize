@@ -84,8 +84,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.output.isSpeaking ?? false
         }
 
+        voiceCommands.onWebsiteAction = { [weak self] action in
+            print("AppDelegate: website action \"\(action)\"")
+            self?.bridge.sendAction(action)
+        }
+
         bridge.onDebugExplain = { [weak self] in
             self?.sensing.explainCurrentElement()
+        }
+
+        bridge.onDebugSelect = { [weak self] in
+            self?.sensing.confirmCurrentElement()
         }
 
         bridge.onSetLanguage = { [weak self] languageCode in
