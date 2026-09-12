@@ -6,7 +6,8 @@ A swipe-to-type keyboard, like the one on iOS, built to take gaze input later. F
 
 ```bash
 cd swipe-keyboard
-OPENAI_API_KEY=sk-... python3 server.py
+cp .env.example .env   # then put your OpenAI key in .env
+python3 server.py
 ```
 
 Open http://localhost:8000 and trace words with the trackpad or mouse. **Tap Space** once to start, then tap it at the end of each word. A tap stands in for a blink. Each tap ends the current word and starts the next one right away. Backspace deletes the last word. **Enter** ends the sentence and sends it to the LLM, and the decoded text appears at the top of the page.
