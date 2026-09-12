@@ -76,23 +76,89 @@ final class Sensing {
         return sensed
     }
 
+    /// The demo's fixed target app. The website runs in a browser, which is
+    /// what's actually frontmost when the user clicks a goal — so this can't
+    /// use NSWorkspace.frontmostApplication (that was the bug: highlight
+    /// requests were searching the browser's AX tree, not Messages').
+    ///
+    /// Matched by bundle identifier, not localizedName == "Messages" -
+    /// Messages' background "Messages Assistant Extension" helper process
+    /// also reports that same localizedName, and .first(where:) was
+    /// silently picking that windowless helper instead of the real app,
+    /// which is why every window/AX-tree query kept failing.
+    private static let targetAppName = "Messages"
+    private static let targetBundleID = "com.apple.MobileSMS"
+
     /// Resolve a human-readable target description (from the website, e.g.
-    /// "send button") to an on-screen frame, by walking the frontmost app's
-    /// AX tree for a matching title/description. Used to draw the overlay.
+    /// "send button") to an on-screen frame, by walking the target app's AX
+    /// tree for a matching title/description. Used to draw the overlay.
     func screenFrame(forElementDescribed description: String) -> CGRect? {
-        guard AXIsProcessTrusted(),
-              let frontApp = NSWorkspace.shared.frontmostApplication else {
-            print("Sensing.screenFrame: not trusted or no frontmost app")
+        guard AXIsProcessTrusted() else {
+            print("Sensing.screenFrame: not trusted")
             return nil
         }
 
-        print("Sensing.screenFrame: searching \"\(frontApp.localizedName ?? "?")\" for \"\(description)\"")
-        let appElement = AXUIElementCreateApplication(frontApp.processIdentifier)
-        let found = findElement(in: appElement, matching: description, depth: 0)
-        if found == nil {
-            print("Sensing.screenFrame: no match for \"\(description)\" in \(frontApp.localizedName ?? "?")")
+        guard let targetApp = NSWorkspace.shared.runningApplications.first(where: {
+            $0.bundleIdentifier == Self.targetBundleID
+        }) else {
+            print("Sensing.screenFrame: \(Self.targetAppName) is not running")
+            return nil
         }
-        return found?.frame
+
+        // Messages (a Mac Catalyst app) only answers window/AX-tree queries
+        // while it's the active app - in the background, kAXWindowsAttribute
+        // and kAXFocusedWindowAttribute both report empty/error. Since the
+        // whole point of this call is to show the user where to look in
+        // Messages, bringing it to the front here is also just correct UX,
+        // not only a technical workaround.
+        if !targetApp.isActive {
+            print("Sensing.screenFrame: activating \(Self.targetAppName) (was backgrounded)")
+            targetApp.activate(options: [])
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+
+        print("Sensing.screenFrame: searching \"\(Self.targetAppName)\" for \"\(description)\"")
+        let appElement = AXUIElementCreateApplication(targetApp.processIdentifier)
+
+        // Messages is a Mac Catalyst (UIKit-on-Mac) app - Catalyst apps
+        // don't expose their real AX tree until this is explicitly turned
+        // on, otherwise window/children queries fail with kAXErrorCannotComplete.
+        AXUIElementSetAttributeValue(appElement, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+
+        // The app element's kAXChildrenAttribute doesn't reliably surface
+        // windows for every app - kAXWindowsAttribute is the documented,
+        // reliable way to get them, so start the search there instead.
+        // Fall back to kAXFocusedWindowAttribute if that fails - some
+        // Catalyst apps answer the single-focused-window query even when
+        // full window enumeration errors out.
+        var windowsRef: CFTypeRef?
+        let windowsResult = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef)
+        var windows: [AXUIElement] = []
+
+        if windowsResult == .success, let list = windowsRef as? [AXUIElement] {
+            windows = list
+        } else {
+            print("Sensing.screenFrame: kAXWindowsAttribute failed (axError=\(windowsResult.rawValue)), trying focused window")
+            var focusedRef: CFTypeRef?
+            let focusedResult = AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &focusedRef)
+            if focusedResult == .success, let focused = focusedRef {
+                windows = [focused as! AXUIElement]
+            } else {
+                print("Sensing.screenFrame: kAXFocusedWindowAttribute also failed (axError=\(focusedResult.rawValue))")
+                return nil
+            }
+        }
+
+        print("Sensing.screenFrame: \(Self.targetAppName) has \(windows.count) window(s)")
+
+        for window in windows {
+            if let found = findElement(in: window, matching: description, depth: 0) {
+                return found.frame
+            }
+        }
+
+        print("Sensing.screenFrame: no match for \"\(description)\" in \(Self.targetAppName)")
+        return nil
     }
 
     private func resetCurrent() {
@@ -115,10 +181,11 @@ final class Sensing {
     }
 
     private func findElement(in element: AXUIElement, matching description: String, depth: Int) -> SensedElement? {
-        guard depth < 8 else { return nil }
+        guard depth < 25 else { return nil }
 
         if let sensed = describe(element), !sensed.title.isEmpty,
-           sensed.title.lowercased().contains(description.lowercased()) {
+           sensed.title.lowercased().contains(description.lowercased()),
+           sensed.frame.width > 0, sensed.frame.height > 0 {
             return sensed
         }
 
