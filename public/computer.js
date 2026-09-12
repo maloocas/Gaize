@@ -28,7 +28,7 @@ async function bridge(path, body = {}) {
   } catch (error) {
     const hosted = !["localhost", "127.0.0.1"].includes(location.hostname);
     throw new Error(hosted
-      ? "This hosted browser cannot access your Mac's local bridge. Run python3 native/start.py, then use http://localhost:8000 for system control."
+      ? "Whole-computer control runs as the native Mac app, not in this website. Run python3 native/start.py to open it."
       : "Browser could not reach the local bridge. Restart with python3 native/start.py, then allow Local Network access if your browser asks.", { cause: error });
   }
   let data = {};
@@ -58,6 +58,10 @@ async function connectBridge() {
 async function startSystemControl() {
   const button = $("startSystemControl");
   const statusEl = $("systemControlStatus");
+  if (!["localhost", "127.0.0.1"].includes(location.hostname)) {
+    statusEl.textContent = "Whole-computer eye control is a background Mac app. Run python3 native/start.py on the Mac, then calibrate with all nine dots.";
+    return;
+  }
   if (controlArmed) {
     await bridge("panic").catch(() => {});
     controlArmed = false; window.openGazeSystemArmed = false;
