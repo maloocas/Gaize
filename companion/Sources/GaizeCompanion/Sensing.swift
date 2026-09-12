@@ -7,21 +7,17 @@ struct SensedElement {
     let frame: CGRect
 }
 
-/// AX hit-testing on whatever's under the gaze point. Gaze settling on a new
-/// element explains it exactly once — no auto-repeat, no auto-confirm timer.
-/// After that, it's entirely voice-driven: say "explain" to hear it again,
-/// "select" to confirm/press it, whenever the user is ready.
+/// AX hit-testing on whatever's under the gaze point. Purely tracks which
+/// element the gaze is currently on — it never speaks on its own. Speaking
+/// only happens on demand, via a voice command: "explain"/"what is this" to
+/// hear about the current element, "select" to confirm/press it.
 final class Sensing {
-    var onDwellExplain: ((SensedElement) -> Void)?
-    var onDwellConfirm: ((SensedElement) -> Void)?
+    var onExplainRequested: ((SensedElement) -> Void)?
+    var onConfirmed: ((SensedElement) -> Void)?
 
     private let systemWide = AXUIElementCreateSystemWide()
     private var currentAXElement: AXUIElement?
     private var currentSensed: SensedElement?
-    private var dwellStart: Date?
-    private var hasExplainedCurrent = false
-
-    private let explainDwellSeconds: TimeInterval = 0.4
 
     private var lastHeartbeat = Date.distantPast
 
@@ -47,32 +43,18 @@ final class Sensing {
         )
 
         guard result == .success, let axElement = axElementRef, let sensed = describe(axElement) else {
-            resetDwell()
+            resetCurrent()
             return
         }
 
         // Compare by AX element identity, not a rebuilt role/title/frame
         // string — tiny gaze jitter can make the same on-screen button
-        // report marginally different frame values between frames, which
-        // was causing the explanation to needlessly re-fire.
+        // report marginally different frame values between frames.
         let isSameElement = currentAXElement.map { CFEqual($0, axElement) } ?? false
-
         if !isSameElement {
             print("Sensing: new element role=\(sensed.role) title=\"\(sensed.title)\"")
             currentAXElement = axElement
             currentSensed = sensed
-            dwellStart = Date()
-            hasExplainedCurrent = false
-            return
-        }
-
-        guard let start = dwellStart else { return }
-        let elapsed = Date().timeIntervalSince(start)
-
-        if !hasExplainedCurrent, elapsed >= explainDwellSeconds {
-            hasExplainedCurrent = true
-            print("Sensing: EXPLAIN firing for role=\(sensed.role) title=\"\(sensed.title)\"")
-            onDwellExplain?(sensed)
         }
     }
 
@@ -81,17 +63,16 @@ final class Sensing {
     func confirmCurrentElement() -> SensedElement? {
         guard let axElement = currentAXElement, let sensed = currentSensed else { return nil }
         AXUIElementPerformAction(axElement, kAXPressAction as CFString)
-        onDwellConfirm?(sensed)
-        resetDwell()
+        onConfirmed?(sensed)
+        resetCurrent()
         return sensed
     }
 
-    /// Fired directly by an "explain" voice command, to replay the
-    /// explanation without waiting for the dwell timer to retrigger it.
+    /// Fired by an "explain"/"what is this" voice command.
     @discardableResult
     func explainCurrentElement() -> SensedElement? {
         guard let sensed = currentSensed else { return nil }
-        onDwellExplain?(sensed)
+        onExplainRequested?(sensed)
         return sensed
     }
 
@@ -100,17 +81,23 @@ final class Sensing {
     /// AX tree for a matching title/description. Used to draw the overlay.
     func screenFrame(forElementDescribed description: String) -> CGRect? {
         guard AXIsProcessTrusted(),
-              let frontApp = NSWorkspace.shared.frontmostApplication else { return nil }
+              let frontApp = NSWorkspace.shared.frontmostApplication else {
+            print("Sensing.screenFrame: not trusted or no frontmost app")
+            return nil
+        }
 
+        print("Sensing.screenFrame: searching \"\(frontApp.localizedName ?? "?")\" for \"\(description)\"")
         let appElement = AXUIElementCreateApplication(frontApp.processIdentifier)
-        return findElement(in: appElement, matching: description, depth: 0)?.frame
+        let found = findElement(in: appElement, matching: description, depth: 0)
+        if found == nil {
+            print("Sensing.screenFrame: no match for \"\(description)\" in \(frontApp.localizedName ?? "?")")
+        }
+        return found?.frame
     }
 
-    private func resetDwell() {
+    private func resetCurrent() {
         currentAXElement = nil
         currentSensed = nil
-        dwellStart = nil
-        hasExplainedCurrent = false
     }
 
     private func describe(_ element: AXUIElement) -> SensedElement? {

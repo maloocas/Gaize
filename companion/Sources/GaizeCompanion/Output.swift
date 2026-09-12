@@ -1,8 +1,19 @@
 import AVFoundation
 
 /// Spoken output, backed by KnowledgePack for real explanation text.
-final class Output {
+///
+/// Tracks isSpeaking so VoiceCommands can mute itself while this is talking -
+/// without that, the mic picks up our own TTS through the speakers and
+/// transcribes it right back as a command (e.g. "Selecting compose" contains
+/// "select", re-triggering the select command in a feedback loop).
+final class Output: NSObject, AVSpeechSynthesizerDelegate {
     private let synthesizer = AVSpeechSynthesizer()
+    private(set) var isSpeaking = false
+
+    override init() {
+        super.init()
+        synthesizer.delegate = self
+    }
 
     func speakExplanation(for element: SensedElement) {
         speak(KnowledgePack.explanation(for: element))
@@ -15,8 +26,17 @@ final class Output {
     func speak(_ text: String) {
         print("Output: speaking \"\(text)\"")
         synthesizer.stopSpeaking(at: .word)
+        isSpeaking = true
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         synthesizer.speak(utterance)
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        isSpeaking = false
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        isSpeaking = false
     }
 }
