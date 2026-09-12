@@ -15,6 +15,10 @@ final class VoiceCommands {
     var onSelectCommand: (() -> Void)?
     var onExplainCommand: (() -> Void)?
     var onOpenWebsiteCommand: (() -> Void)?
+    /// Fired with "home" / "back" / "learn" / "quiz" / "scenario" - direct
+    /// voice navigation of the website's own buttons, sent to it as a
+    /// bridge message rather than routed through gaze/AX at all.
+    var onWebsiteAction: ((String) -> Void)?
     /// Checked before acting on any recognized command - lets the caller
     /// mute us while Output is speaking, to avoid hearing our own TTS.
     var isMuted: (() -> Bool)?
@@ -134,6 +138,21 @@ final class VoiceCommands {
         if language.openWebsiteKeywords.contains(where: recentText.contains) {
             recentTranscript.removeAll()
             onOpenWebsiteCommand?()
+        } else if language.homeKeywords.contains(where: recentText.contains) {
+            recentTranscript.removeAll()
+            onWebsiteAction?("home")
+        } else if language.backToGoalsKeywords.contains(where: recentText.contains) {
+            recentTranscript.removeAll()
+            onWebsiteAction?("back")
+        } else if language.takeQuizKeywords.contains(where: recentText.contains) {
+            recentTranscript.removeAll()
+            onWebsiteAction?("quiz")
+        } else if language.tryScenarioKeywords.contains(where: recentText.contains) {
+            recentTranscript.removeAll()
+            onWebsiteAction?("scenario")
+        } else if language.learnKeywords.contains(where: recentText.contains) {
+            recentTranscript.removeAll()
+            onWebsiteAction?("learn")
         } else if language.selectKeywords.contains(where: newWords.contains) {
             onSelectCommand?()
         } else if language.explainKeywords.contains(where: recentText.contains) {

@@ -76,6 +76,7 @@ final class Sensing {
         var pid: pid_t = 0
         AXUIElementGetPid(axElement, &pid)
         let ownerBundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? ""
+        print("Sensing: confirming \"\(sensed.title)\" owned by pid=\(pid) bundleID=\"\(ownerBundleID)\"")
 
         if Self.browserBundleIDs.contains(ownerBundleID) {
             print("Sensing: confirming \"\(sensed.title)\" via synthesized click (browser-owned)")

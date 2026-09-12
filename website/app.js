@@ -306,6 +306,11 @@ function requestHighlight(target) {
 }
 
 function handleCompanionEvent(msg) {
+  if (msg.type === "voice_action") {
+    handleVoiceAction(msg.action);
+    return;
+  }
+
   if (msg.type !== "action_completed") return;
   const title = (msg.title || "").toLowerCase();
 
@@ -321,6 +326,29 @@ function handleCompanionEvent(msg) {
       scenarioProgress += 1;
       renderScenario();
     }
+  }
+}
+
+// Direct voice navigation of this page's own buttons ("home", "back",
+// "learn", "quiz", "scenario") - sent by the companion app regardless of
+// gaze, so it works even if the target button is too small/precise to
+// reliably hit with gaze alone. Each action is a no-op outside the screen
+// it applies to (e.g. "learn" only makes sense from goal-detail).
+function handleVoiceAction(action) {
+  switch (action) {
+    case "home":
+    case "back":
+      renderGoalList();
+      break;
+    case "learn":
+      if (mode === "goal-detail") beginLearning();
+      break;
+    case "quiz":
+      if (mode === "goal-detail" || mode === "goal") startQuiz();
+      break;
+    case "scenario":
+      if (mode === "goal-detail" || mode === "goal") startScenario();
+      break;
   }
 }
 
@@ -413,7 +441,7 @@ function startQuiz() {
   mode = "quiz";
   quizIndex = 0;
   quizAnswers = [];
-  hide("active-goal");
+  hide("goal-detail", "active-goal");
   show("quiz");
   document.getElementById("quiz-heading").textContent = "Quiz";
   renderQuizQuestion();
@@ -462,7 +490,7 @@ function renderQuizQuestion() {
 function startScenario() {
   mode = "scenario";
   scenarioProgress = 0;
-  hide("active-goal");
+  hide("goal-detail", "active-goal");
   show("quiz");
   document.getElementById("quiz-heading").textContent = "Scenario";
   renderScenario();
