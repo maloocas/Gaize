@@ -7,26 +7,26 @@ struct SensedElement {
     let frame: CGRect
 }
 
-/// AX hit-testing on whatever's under the gaze point + dwell-time state
-/// machine: gaze settles on an element -> explain; settles again, longer -> confirm.
+/// AX hit-testing on whatever's under the gaze point. Gaze settling on a new
+/// element explains it exactly once — no auto-repeat, no auto-confirm timer.
+/// After that, it's entirely voice-driven: say "explain" to hear it again,
+/// "select" to confirm/press it, whenever the user is ready.
 final class Sensing {
     var onDwellExplain: ((SensedElement) -> Void)?
     var onDwellConfirm: ((SensedElement) -> Void)?
 
     private let systemWide = AXUIElementCreateSystemWide()
-    private var currentKey: String?
     private var currentAXElement: AXUIElement?
     private var currentSensed: SensedElement?
     private var dwellStart: Date?
     private var hasExplainedCurrent = false
 
     private let explainDwellSeconds: TimeInterval = 0.4
-    private let confirmDwellSeconds: TimeInterval = 7.0
+
+    private var lastHeartbeat = Date.distantPast
 
     /// Called on every gaze-tracker frame with the current screen-space gaze
     /// point, top-left origin (Quartz/AX coordinates, not Cocoa).
-    private var lastHeartbeat = Date.distantPast
-
     func updateGaze(at point: CGPoint) {
         if Date().timeIntervalSince(lastHeartbeat) > 1.0 {
             lastHeartbeat = Date()
@@ -47,18 +47,18 @@ final class Sensing {
         )
 
         guard result == .success, let axElement = axElementRef, let sensed = describe(axElement) else {
-            print("Sensing: hit-test at \(point) failed, axError=\(result.rawValue)")
             resetDwell()
             return
         }
 
-        let key = "\(sensed.role)|\(sensed.title)|\(sensed.frame)"
-        if key != currentKey {
-            print("Sensing: new element role=\(sensed.role) title=\"\(sensed.title)\" frame=\(sensed.frame)")
-        }
+        // Compare by AX element identity, not a rebuilt role/title/frame
+        // string — tiny gaze jitter can make the same on-screen button
+        // report marginally different frame values between frames, which
+        // was causing the explanation to needlessly re-fire.
+        let isSameElement = currentAXElement.map { CFEqual($0, axElement) } ?? false
 
-        if key != currentKey {
-            currentKey = key
+        if !isSameElement {
+            print("Sensing: new element role=\(sensed.role) title=\"\(sensed.title)\"")
             currentAXElement = axElement
             currentSensed = sensed
             dwellStart = Date()
@@ -73,14 +73,10 @@ final class Sensing {
             hasExplainedCurrent = true
             print("Sensing: EXPLAIN firing for role=\(sensed.role) title=\"\(sensed.title)\"")
             onDwellExplain?(sensed)
-        } else if hasExplainedCurrent, elapsed >= confirmDwellSeconds {
-            print("Sensing: CONFIRM firing for role=\(sensed.role) title=\"\(sensed.title)\"")
-            confirmCurrentElement()
         }
     }
 
-    /// Fired by a longer gaze dwell, or directly by a "select" voice command
-    /// so the user isn't forced to wait out the dwell timer.
+    /// Fired by a "select"/"click"/"choose"/"confirm" voice command.
     @discardableResult
     func confirmCurrentElement() -> SensedElement? {
         guard let axElement = currentAXElement, let sensed = currentSensed else { return nil }
@@ -111,7 +107,6 @@ final class Sensing {
     }
 
     private func resetDwell() {
-        currentKey = nil
         currentAXElement = nil
         currentSensed = nil
         dwellStart = nil
