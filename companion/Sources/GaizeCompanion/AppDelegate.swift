@@ -2,10 +2,11 @@ import AppKit
 import ApplicationServices
 
 /// Menu-bar entry point. Owns lifecycle of the six pieces:
-/// GazeTracker (camera -> gaze point), Sensing (AX hit-test + dwell on the
-/// target app), Overlay (highlight window), Output (TTS), VoiceCommands
-/// (hands-free "select" / "explain"), Bridge (local WebSocket server to the
-/// website).
+/// GazeTracker (camera -> gaze point), Sensing (AX hit-test, tracks what's
+/// currently gazed at, never speaks on its own), Overlay (highlight window),
+/// Output (TTS), VoiceCommands ("explain"/"what is this" to hear about the
+/// current element, "select" to confirm it, "open website" to launch the
+/// site), Bridge (local WebSocket server to the website).
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
@@ -28,8 +29,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         bridge.onHighlightRequest = { [weak self] target in
             guard let self else { return }
+            print("AppDelegate: highlight requested for \"\(target)\"")
             if let frame = self.sensing.screenFrame(forElementDescribed: target) {
+                print("AppDelegate: found frame \(frame) for \"\(target)\", showing overlay")
                 self.overlay.highlight(frame)
+            } else {
+                print("AppDelegate: no element found matching \"\(target)\" in frontmost app")
             }
         }
 
@@ -38,13 +43,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.sensing.updateGaze(at: point)
         }
 
-        sensing.onDwellExplain = { [weak self] element in
+        sensing.onExplainRequested = { [weak self] element in
             guard let self else { return }
             self.bridge.send(event: "hover", element: element)
             self.output.speakExplanation(for: element)
         }
 
-        sensing.onDwellConfirm = { [weak self] element in
+        sensing.onConfirmed = { [weak self] element in
             guard let self else { return }
             self.bridge.send(event: "action_completed", element: element)
             self.output.speakConfirmation(for: element)
@@ -58,6 +63,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.sensing.explainCurrentElement()
         }
 
+        voiceCommands.onOpenWebsiteCommand = {
+            print("AppDelegate: opening website at \(AppDelegate.websiteURL)")
+            NSWorkspace.shared.open(AppDelegate.websiteURL)
+        }
+
+        voiceCommands.isMuted = { [weak self] in
+            self?.output.isSpeaking ?? false
+        }
+
         bridge.start()
         gazeTracker.start()
         voiceCommands.start()
@@ -66,6 +80,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func quit() {
         NSApplication.shared.terminate(nil)
     }
+
+    /// Resolved at compile time from this source file's location, so "open
+    /// website" works regardless of where Gaize.app is launched from -
+    /// relies on the repo layout staying companion/Sources/GaizeCompanion/
+    /// next to a sibling website/ directory.
+    private static let websiteURL: URL = {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent() // GaizeCompanion
+            .deletingLastPathComponent() // Sources
+            .deletingLastPathComponent() // companion
+            .appendingPathComponent("website/index.html")
+    }()
 
     /// AXIsProcessTrusted() alone never triggers macOS's permission dialog —
     /// it just silently returns false forever. Passing the prompt option is

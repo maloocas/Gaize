@@ -12,9 +12,14 @@ import AVFoundation
 final class VoiceCommands {
     var onSelectCommand: (() -> Void)?
     var onExplainCommand: (() -> Void)?
+    var onOpenWebsiteCommand: (() -> Void)?
+    /// Checked before acting on any recognized command - lets the caller
+    /// mute us while Output is speaking, to avoid hearing our own TTS.
+    var isMuted: (() -> Bool)?
 
     private let selectKeywords = ["select", "click", "choose", "confirm"]
     private let explainKeywords = ["explain", "what is this", "what's this"]
+    private let openWebsiteKeywords = ["open website", "open the website", "show website", "open goals", "show goals"]
 
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     private let audioEngine = AVAudioEngine()
@@ -92,7 +97,14 @@ final class VoiceCommands {
             .joined(separator: " ")
         lastHandledSegmentCount = segments.count
 
-        if selectKeywords.contains(where: newWords.contains) {
+        if isMuted?() == true {
+            print("VoiceCommands: muted (Output is speaking), ignoring \"\(newWords)\"")
+            return
+        }
+
+        if openWebsiteKeywords.contains(where: newWords.contains) {
+            onOpenWebsiteCommand?()
+        } else if selectKeywords.contains(where: newWords.contains) {
             onSelectCommand?()
         } else if explainKeywords.contains(where: newWords.contains) {
             onExplainCommand?()
