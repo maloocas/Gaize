@@ -57,12 +57,10 @@ For whole-computer control on macOS, use the native launcher from the project di
 python3 native/start.py
 ```
 
-It opens a native calibration window and then runs in the background—no browser
-is involved. Follow all nine calibration dots; the measured left, center, right,
-top, and bottom eye positions are expanded to the full Mac screen. Look to move
-the pointer and blink to click in Notes or any other application. Clicking an
-editable field opens the large native keyboard. Press Escape once to quit at
-any time; calibration also has a visible red Exit button.
+It runs from the macOS menu bar—no browser is involved. Move the pointer with a
+normal mouse or trackpad, then blink to click at its current position. Clicking
+an editable field opens the large native keyboard. Press Escape once or choose
+**Quit OpenGaze** from the menu-bar item to stop at any time.
 
 On first launch, macOS may request Camera, Accessibility, and Input Monitoring
 permission for Terminal. Grant them in System Settings, then restart the command.

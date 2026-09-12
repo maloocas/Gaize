@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Native macOS background eye controller. No browser is involved."""
+"""Native macOS blink-to-click controller. Mouse movement stays untouched."""
 
 from __future__ import annotations
 
@@ -35,16 +35,18 @@ def vision_eye_metrics(observation):
     for eye, pupil in ((landmarks.leftEye(), landmarks.leftPupil()),
                        (landmarks.rightEye(), landmarks.rightPupil())):
         contour, pupil_points = _points(eye), _points(pupil)
-        if not contour or not pupil_points: continue
+        if not contour: continue
         xs, ys = [p.x for p in contour], [p.y for p in contour]
         width, height = max(xs)-min(xs), max(ys)-min(ys)
         if width < 1e-5 or height < 1e-5: continue
-        px = sum(p.x for p in pupil_points)/len(pupil_points)
-        py = sum(p.y for p in pupil_points)/len(pupil_points)
-        ratios.append(((px-min(xs))/width, (py-min(ys))/height))
+        if pupil_points:
+            px = sum(p.x for p in pupil_points)/len(pupil_points)
+            py = sum(p.y for p in pupil_points)/len(pupil_points)
+            ratios.append(((px-min(xs))/width, (py-min(ys))/height))
         ears.append(height/width)
-    if not ratios: return None
-    gaze = (sum(p[0] for p in ratios)/len(ratios), sum(p[1] for p in ratios)/len(ratios))
+    if not ears: return None
+    gaze = ((sum(p[0] for p in ratios)/len(ratios),
+             sum(p[1] for p in ratios)/len(ratios)) if ratios else (.5,.5))
     return gaze, sum(ears)/len(ears)
 
 
@@ -126,24 +128,27 @@ class NativeController(NSObject):
     def init(self):
         self = objc.super(NativeController, self).init()
         if self is None: return None
-        self.running=True; self.control_enabled=False; self.collecting=None; self.failed=False
+        self.running=True; self.control_enabled=True; self.collecting=None; self.failed=False
         self.latest_gaze=None; self.latest_seen=0.0; self.latest_frame=None
         self.failure_reason="Calibration stopped — eyes were not detected. Press R to retry or Escape to exit."
         self.calib_samples=[]; self.calibration=None; self.target_index=0
         self.open_ears=collections.deque(maxlen=120); self.closed_frames=0
         self.closed_since=0.0; self.last_blink=0.0; self.smooth=[.5,.5]
-        screen=AppKit.NSScreen.mainScreen().frame()
-        self.view=CalibrationView.alloc().initWithController_(self)
-        self.window=AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(screen,AppKit.NSWindowStyleMaskBorderless,AppKit.NSBackingStoreBuffered,False)
-        self.window.setLevel_(AppKit.NSMainMenuWindowLevel+2); self.window.setContentView_(self.view)
-        self.window.setBackgroundColor_(AppKit.NSColor.blackColor()); self.window.makeKeyAndOrderFront_(None)
-        AppKit.NSApp.activateIgnoringOtherApps_(True)
-        self.key_monitor = AppKit.NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
-            AppKit.NSEventMaskKeyDown, self.handle_key)
+        # A menu-bar control keeps the app out of the way while providing a
+        # visible, mouse-accessible exit in addition to the Escape panic key.
+        self.status_item=AppKit.NSStatusBar.systemStatusBar().statusItemWithLength_(
+            AppKit.NSVariableStatusItemLength)
+        self.status_item.button().setTitle_("◉ Blink Click")
+        self.menu=AppKit.NSMenu.alloc().init()
+        mode=AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Move the mouse normally · blink to click",None,"")
+        self.menu.addItem_(mode); self.menu.addItem_(AppKit.NSMenuItem.separatorItem())
+        quit_item=AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Quit OpenGaze","quit:","q")
+        quit_item.setTarget_(self); self.menu.addItem_(quit_item)
+        self.status_item.setMenu_(self.menu)
         threading.Thread(target=self.panic_loop,daemon=True).start()
         self.request_camera_access()
-        self.performSelector_withObject_afterDelay_("startTarget:",None,1.5)
-        self.performSelector_withObject_afterDelay_("refreshGaze:",None,.1)
         return self
 
     @objc.python_method
@@ -164,6 +169,7 @@ class NativeController(NSObject):
             self.cameraFailed_(None)
 
     def startCamera_(self, _sender):
+        self.status_item.button().setTitle_("◉ Blink Click · starting camera")
         threading.Thread(target=self.camera_loop,daemon=True).start()
 
     def startTarget_(self, _sender):
@@ -211,7 +217,7 @@ class NativeController(NSObject):
             "Camera access denied. Enable OpenGaze or Terminal in System Settings → "
             "Privacy & Security → Camera, then press Escape and relaunch."
         )
-        self.view.setNeedsDisplay_(True)
+        self.status_item.button().setTitle_("⚠ Blink Click · camera blocked")
 
     def quit_(self, _sender):
         self.running=False; self.control_enabled=False
@@ -220,9 +226,8 @@ class NativeController(NSObject):
     @objc.python_method
     def process(self,gaze,ear,now):
         self.latest_gaze=gaze; self.latest_seen=now
-        if self.collecting is not None: self.collecting.append(gaze)
         if ear>.14: self.open_ears.append(ear)
-        if not self.control_enabled or not self.calibration: return
+        if not self.control_enabled: return
         ordered=sorted(self.open_ears); threshold=(ordered[len(ordered)//2]*.72) if ordered else .20
         if ear<threshold:
             self.closed_frames+=1
@@ -231,10 +236,6 @@ class NativeController(NSObject):
             if self.closed_frames>=2 and .07<=now-self.closed_since<=.9 and now-self.last_blink>.38:
                 self.last_blink=now; click()
             self.closed_frames=0
-        x,y=self.calibration.map(*gaze)
-        self.smooth[0]=self.smooth[0]*.70+x*.30; self.smooth[1]=self.smooth[1]*.70+y*.30
-        width,height=screen_size(); point=Quartz.CGPointMake(self.smooth[0]*width,self.smooth[1]*height)
-        Quartz.CGEventPost(Quartz.kCGHIDEventTap,Quartz.CGEventCreateMouseEvent(None,Quartz.kCGEventMouseMoved,point,Quartz.kCGMouseButtonLeft))
 
     def refreshGaze_(self, _sender):
         if self.window.isVisible():
@@ -249,6 +250,7 @@ class NativeController(NSObject):
                 "cameraFailed:", None, False)
             return
         request=Vision.VNDetectFaceLandmarksRequest.alloc().init()
+        announced=False
         while self.running and cap.isOpened():
             ok,frame=cap.read()
             if not ok: continue
@@ -260,8 +262,16 @@ class NativeController(NSObject):
             succeeded,_=handler.performRequests_error_([request],None)
             results=request.results() if succeeded else None
             metrics=vision_eye_metrics(results[0]) if results else None
-            if metrics: self.process(metrics[0],metrics[1],time.monotonic())
+            if metrics:
+                if not announced:
+                    announced=True
+                    self.performSelectorOnMainThread_withObject_waitUntilDone_(
+                        "cameraReady:",None,False)
+                self.process(metrics[0],metrics[1],time.monotonic())
         cap.release()
+
+    def cameraReady_(self, _sender):
+        self.status_item.button().setTitle_("● Blink Click · active")
 
     @objc.python_method
     def panic_loop(self):
