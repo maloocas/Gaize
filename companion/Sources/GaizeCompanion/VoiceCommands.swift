@@ -201,7 +201,10 @@ final class VoiceCommands {
         if result.isFinal {
             pendingDictation?.cancel()
             pendingDictation = nil
-            if !commandFiredThisSession, let text = dictationCandidate(segments) {
+            // No "no command this session" gate - it blocked the name after
+            // "select" on compose (observed: "lucas" x3, never typed).
+            // dictationStartIndex already skips past command words.
+            if let text = dictationCandidate(segments) {
                 fireDictation(text, upTo: segments.count)
                 return
             }
@@ -230,6 +233,9 @@ final class VoiceCommands {
                 firedSelectIndices.insert(index)
                 lastSelectAt = Date()
                 commandFiredThisSession = true
+                // Dictation resumes after the select - selecting compose and
+                // then saying a name is usually one recognition session.
+                dictationStartIndex = segments.count
                 recentTranscript.removeAll()
                 print("VoiceCommands: SELECT")
                 onSelectCommand?()
@@ -250,6 +256,7 @@ final class VoiceCommands {
         let fire: (() -> Void) -> Void = { action in
             self.recentTranscript.removeAll()
             self.commandFiredThisSession = true
+            self.dictationStartIndex = segments.count
             action()
         }
 
@@ -366,7 +373,13 @@ final class VoiceCommands {
         let echoWords = Set((lingeringSpokenText?() ?? "").lowercased()
             .components(separatedBy: CharacterSet.letters.inverted).filter { !$0.isEmpty })
         var words: [String] = []
-        for word in segments[start...] where !echoWords.contains(word) && words.last != word {
+        // Loose match - our "compose" comes back as "comp" / "composed".
+        let isEchoWord: (String) -> Bool = { word in
+            echoWords.contains { echo in
+                echo == word || (echo.count >= 3 && word.count >= 3 && (echo.hasPrefix(word) || word.hasPrefix(echo)))
+            }
+        }
+        for word in segments[start...] where !isEchoWord(word) && words.last != word {
             words.append(word)
         }
         guard (1...3).contains(words.count) else { return nil }
@@ -376,13 +389,13 @@ final class VoiceCommands {
     private func scheduleDictation(_ segments: [String]) {
         pendingDictation?.cancel()
         pendingDictation = nil
-        guard !commandFiredThisSession, let text = dictationCandidate(segments) else { return }
+        guard let text = dictationCandidate(segments) else { return }
         let wordCount = segments.count
         // A name is short - act quickly. A message has natural mid-sentence
         // pauses, so wait longer before deciding it's finished.
         let delay = isRecipientPending?() == true ? recipientSilence : messageSilence
         let work = DispatchWorkItem { [weak self] in
-            guard let self, !self.commandFiredThisSession, self.lastSegments.count == wordCount else { return }
+            guard let self, self.lastSegments.count == wordCount else { return }
             self.fireDictation(text, upTo: wordCount)
         }
         pendingDictation = work
