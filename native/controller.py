@@ -70,7 +70,7 @@ class CalibrationView(AppKit.NSView):
             attrs = {AppKit.NSFontAttributeName: AppKit.NSFont.boldSystemFontOfSize_(26),
                      AppKit.NSForegroundColorAttributeName: AppKit.NSColor.whiteColor()}
             NSString.stringWithString_(
-                "Calibration stopped — camera/eyes were not detected. Press R to retry or Escape to exit."
+                self.controller.failure_reason
             ).drawAtPoint_withAttributes_((bounds.size.width/2-510,bounds.size.height/2),attrs)
             return
         index = min(self.controller.target_index, len(TARGETS)-1)
@@ -96,6 +96,7 @@ class NativeController(NSObject):
         self = objc.super(NativeController, self).init()
         if self is None: return None
         self.running=True; self.control_enabled=False; self.collecting=None; self.failed=False
+        self.failure_reason="Calibration stopped — eyes were not detected. Press R to retry or Escape to exit."
         self.calib_samples=[]; self.calibration=None; self.target_index=0
         self.open_ears=collections.deque(maxlen=120); self.closed_frames=0
         self.closed_since=0.0; self.last_blink=0.0; self.smooth=[.5,.5]
@@ -129,7 +130,9 @@ class NativeController(NSObject):
             self.performSelector_withObject_afterDelay_("startTarget:",None,.25); return
         try: self.calibration=GazeCalibration(self.calib_samples)
         except ValueError:
-            self.failed=True; self.view.setNeedsDisplay_(True); return
+            self.failed=True
+            self.failure_reason="Calibration stopped — keep your face well lit and follow each dot. Press R to retry or Escape to exit."
+            self.view.setNeedsDisplay_(True); return
         self.control_enabled=True; self.window.orderOut_(None)
 
     @objc.python_method
@@ -141,6 +144,14 @@ class NativeController(NSObject):
     def retry_(self, _sender):
         self.failed=False; self.target_index=0; self.calib_samples=[]
         self.startTarget_(None)
+
+    def cameraFailed_(self, _sender):
+        self.failed=True; self.collecting=None
+        self.failure_reason=(
+            "Camera access denied. Enable OpenGaze or Terminal in System Settings → "
+            "Privacy & Security → Camera, then press Escape and relaunch."
+        )
+        self.view.setNeedsDisplay_(True)
 
     def quit_(self, _sender):
         self.running=False; self.control_enabled=False
@@ -167,6 +178,10 @@ class NativeController(NSObject):
     @objc.python_method
     def camera_loop(self):
         cap=cv2.VideoCapture(0)
+        if not cap.isOpened():
+            self.performSelectorOnMainThread_withObject_waitUntilDone_(
+                "cameraFailed:", None, False)
+            return
         request=Vision.VNDetectFaceLandmarksRequest.alloc().init()
         while self.running and cap.isOpened():
             ok,frame=cap.read()
