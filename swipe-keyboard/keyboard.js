@@ -140,6 +140,7 @@ export function createSwipeKeyboard(root, {
       render();
     },
     getLattice: () => lattice,
+    isRecording: () => path !== null,
     // [{candidates, trace}] per word slot, the input for llm.js
     getSlots: () => lattice.map((candidates, i) => ({ candidates, trace: traces[i] })),
     // Stops recording and clears the lattice (after a sentence is committed).
