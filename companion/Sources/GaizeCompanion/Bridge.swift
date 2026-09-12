@@ -17,6 +17,7 @@ final class Bridge {
     var onDebugDictate: ((String) -> Void)?
     var onDebugSend: (() -> Void)?
     var onDebugQuestion: ((String) -> Void)?
+    var onDebugWake: (() -> Void)?
     /// The website finished a goal's last step - { "type": "goal_complete", "title": "..." }.
     var onGoalComplete: ((String) -> Void)?
     /// The website left goal mode - remove the highlight box.
@@ -103,6 +104,10 @@ final class Bridge {
             guard let text = json["text"] as? String else { return }
             DispatchQueue.main.async { [weak self] in
                 self?.onDebugDictate?(text)
+            }
+        case "debug_wake":
+            DispatchQueue.main.async { [weak self] in
+                self?.onDebugWake?()
             }
         case "clear_highlight":
             DispatchQueue.main.async { [weak self] in

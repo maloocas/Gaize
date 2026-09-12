@@ -41,7 +41,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         requestAccessibilityPermission()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem?.button?.title = "👁"
+        // 💤 asleep until "hey Gaize", 👁 while listening for commands.
+        statusItem?.button?.title = "💤"
 
         let menu = NSMenu()
         let keyboardItem = NSMenuItem(title: "Show On-Screen Keyboard on Compose", action: #selector(toggleKeyboardOnCompose), keyEquivalent: "")
@@ -160,6 +161,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         voiceCommands.onSendCommand = { [weak self] in
             self?.performSend()
+        }
+
+        voiceCommands.onWake = { [weak self] announce in
+            guard let self else { return }
+            self.statusItem?.button?.title = "👁"
+            if announce {
+                self.output.speak(AppSettings.shared.language.wakeAcknowledgement)
+            }
+        }
+
+        voiceCommands.onSleep = { [weak self] explicit in
+            guard let self else { return }
+            self.statusItem?.button?.title = "💤"
+            if explicit {
+                self.output.speak(AppSettings.shared.language.sleepAcknowledgement)
+            }
+        }
+
+        bridge.onDebugWake = { [weak self] in
+            self?.voiceCommands.wake()
         }
 
         voiceCommands.onQuestion = { [weak self] question in

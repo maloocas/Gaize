@@ -17,6 +17,10 @@ final class VoiceCommands {
     var onSendCommand: (() -> Void)?
     /// A spoken "how do I..." question, for the AI assistant.
     var onQuestion: ((String) -> Void)?
+    /// Woken by "hey Gaize" - true to announce it ("I'm listening").
+    var onWake: ((Bool) -> Void)?
+    /// Went to sleep - true if asked to, false after the idle timeout.
+    var onSleep: ((Bool) -> Void)?
     /// Fired with "home" / "back" / "learn" / "quiz" / "scenario" - direct
     /// voice navigation of the website's own buttons.
     var onWebsiteAction: ((String) -> Void)?
@@ -68,6 +72,13 @@ final class VoiceCommands {
     private let messageSilence: TimeInterval = 1.8
     private var pendingQuestion: DispatchWorkItem?
     private let questionSilence: TimeInterval = 1.3
+
+    /// Asleep until "hey Gaize" - then every command works until "goodbye
+    /// Gaize"/"stop listening", or this long with no command at all (so room
+    /// chatter can't keep triggering things indefinitely).
+    private(set) var isAwake = false
+    private var sleepWork: DispatchWorkItem?
+    private let awakeTimeout: TimeInterval = 180
 
     /// Recognition often finalizes after a single word, so a multi-word
     /// phrase like "open website" can land as two isolated sessions - a
@@ -195,6 +206,23 @@ final class VoiceCommands {
         segmentArrivals = segments.indices.map { i in
             i < segmentArrivals.count ? segmentArrivals[i] : arrivedAt
         }
+        // Wake word gate: until "hey Gaize", everything heard is ignored.
+        let spokenSinceCommand = segments[min(dictationStartIndex, segments.count)...].joined(separator: " ")
+        if !isAwake {
+            if language.wakePhrases.contains(where: spokenSinceCommand.contains) {
+                wake()
+            } else if language.openWebsiteKeywords.contains(where: spokenSinceCommand.contains) {
+                // "Gaize open" says the name too - wake and open in one go.
+                wake(announce: false)
+                onOpenWebsiteCommand?()
+            }
+            return
+        }
+        if language.sleepPhrases.contains(where: spokenSinceCommand.contains) {
+            goToSleep(explicit: true)
+            return
+        }
+
         checkForSend(segments, isFinal: result.isFinal)
         // A send restarts the session (see checkForSend); ignore any result
         // still in flight from the old one.
@@ -251,6 +279,7 @@ final class VoiceCommands {
                 dictationStartIndex = segments.count
                 recentTranscript.removeAll()
                 print("VoiceCommands: SELECT")
+                noteActivity()
                 onSelectCommand?()
             }
             return
@@ -270,6 +299,7 @@ final class VoiceCommands {
             self.recentTranscript.removeAll()
             self.commandFiredThisSession = true
             self.dictationStartIndex = segments.count
+            self.noteActivity()
             action()
         }
 
@@ -288,6 +318,39 @@ final class VoiceCommands {
         } else if language.explainKeywords.contains(where: recentText.contains) {
             fire { onExplainCommand?() }
         }
+    }
+
+    /// Starts listening for commands. A fresh recognition session, so the
+    /// wake words themselves can't be read as a command or dictation.
+    func wake(announce: Bool = true) {
+        isAwake = true
+        print("VoiceCommands: AWAKE")
+        noteActivity()
+        onWake?(announce)
+        restartSoon()
+    }
+
+    func goToSleep(explicit: Bool) {
+        guard isAwake else { return }
+        isAwake = false
+        sleepWork?.cancel()
+        sleepWork = nil
+        pendingSend?.cancel()
+        pendingDictation?.cancel()
+        pendingQuestion?.cancel()
+        print("VoiceCommands: ASLEEP (\(explicit ? "asked" : "idle"))")
+        onSleep?(explicit)
+        restartSoon()
+    }
+
+    /// Any command, dictation, or question keeps Gaize awake.
+    private func noteActivity() {
+        sleepWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.goToSleep(explicit: false)
+        }
+        sleepWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + awakeTimeout, execute: work)
     }
 
     /// "send" must be a phrase on its own: a pause before it (or the start
@@ -331,6 +394,7 @@ final class VoiceCommands {
             self.sendFiredThisSession = true
             self.commandFiredThisSession = true
             self.recentTranscript.removeAll()
+            self.noteActivity()
             action()
             // Start a fresh session - ignoring the rest of this one left
             // listening deaf: with room noise it never finalized, so it never
@@ -382,6 +446,7 @@ final class VoiceCommands {
             self.dictationStartIndex = wordCount
             self.recentTranscript.removeAll()
             print("VoiceCommands: QUESTION \"\(question)\"")
+            self.noteActivity()
             self.onQuestion?(question)
             self.restartSoon()
         }
@@ -456,6 +521,7 @@ final class VoiceCommands {
 
     private func fireDictation(_ text: String, upTo index: Int) {
         dictationStartIndex = index
+        noteActivity()
         recentTranscript.removeAll()
         let dictatedText = AppSettings.shared.language.dictationText(from: text)
         guard !dictatedText.isEmpty else { return }
