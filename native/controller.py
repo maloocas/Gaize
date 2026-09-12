@@ -1032,10 +1032,17 @@ class NativeController(NSObject):
     def request_camera_access(self):
         status=AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(
             AVFoundation.AVMediaTypeVideo)
+        # Every branch below was previously silent, so a camera that never
+        # started produced no log line at all and there was nothing to debug.
+        print("[OpenGaze] camera authorisation: "
+              +{0:"not determined (prompting)",1:"restricted",
+                2:"denied",3:"authorised"}.get(status,str(status)),flush=True)
         if status == AVFoundation.AVAuthorizationStatusAuthorized:
             self.startCamera_(None)
         elif status == AVFoundation.AVAuthorizationStatusNotDetermined:
             def decided(granted):
+                print(f"[OpenGaze] camera permission {'granted' if granted else 'refused'}",
+                      flush=True)
                 selector="startCamera:" if granted else "cameraFailed:"
                 self.performSelectorOnMainThread_withObject_waitUntilDone_(
                     selector,None,False)
@@ -1071,6 +1078,7 @@ class NativeController(NSObject):
                 time.sleep(.5)
 
     def cameraFailed_(self, _sender):
+        print("[OpenGaze] camera unavailable - eye control cannot start",flush=True)
         self.status_item.button().setTitle_("⚠ OpenGaze · camera blocked")
         self.cal_message=("Camera unavailable. Enable OpenGaze or Terminal in System Settings → "
                           "Privacy & Security → Camera, then relaunch.")
