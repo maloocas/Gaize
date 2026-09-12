@@ -21,12 +21,22 @@ final class Sensing {
     private var hasExplainedCurrent = false
 
     private let explainDwellSeconds: TimeInterval = 0.4
-    private let confirmDwellSeconds: TimeInterval = 1.2
+    private let confirmDwellSeconds: TimeInterval = 7.0
 
     /// Called on every gaze-tracker frame with the current screen-space gaze
     /// point, top-left origin (Quartz/AX coordinates, not Cocoa).
+    private var lastHeartbeat = Date.distantPast
+
     func updateGaze(at point: CGPoint) {
-        guard AXIsProcessTrusted() else { return }
+        if Date().timeIntervalSince(lastHeartbeat) > 1.0 {
+            lastHeartbeat = Date()
+            print("Sensing: heartbeat, gaze point = \(point)")
+        }
+
+        guard AXIsProcessTrusted() else {
+            print("Sensing: NOT TRUSTED, skipping hit-test")
+            return
+        }
 
         var axElementRef: AXUIElement?
         let result = AXUIElementCopyElementAtPosition(
@@ -37,11 +47,15 @@ final class Sensing {
         )
 
         guard result == .success, let axElement = axElementRef, let sensed = describe(axElement) else {
+            print("Sensing: hit-test at \(point) failed, axError=\(result.rawValue)")
             resetDwell()
             return
         }
 
         let key = "\(sensed.role)|\(sensed.title)|\(sensed.frame)"
+        if key != currentKey {
+            print("Sensing: new element role=\(sensed.role) title=\"\(sensed.title)\" frame=\(sensed.frame)")
+        }
 
         if key != currentKey {
             currentKey = key
@@ -57,8 +71,10 @@ final class Sensing {
 
         if !hasExplainedCurrent, elapsed >= explainDwellSeconds {
             hasExplainedCurrent = true
+            print("Sensing: EXPLAIN firing for role=\(sensed.role) title=\"\(sensed.title)\"")
             onDwellExplain?(sensed)
         } else if hasExplainedCurrent, elapsed >= confirmDwellSeconds {
+            print("Sensing: CONFIRM firing for role=\(sensed.role) title=\"\(sensed.title)\"")
             confirmCurrentElement()
         }
     }
