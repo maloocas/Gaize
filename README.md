@@ -266,9 +266,18 @@ data/
 ## Tests
 
 ```bash
-PYTHONPATH=. ./.venv/bin/python -m pytest tests/ -q   # 31 tests
+# Everything, including the tests that need PyObjC:
+.native-venv/bin/python -m pytest tests/ -q           # 129 tests
+
+# Pure-Python subset, no PyObjC frameworks required:
+PYTHONPATH=. ./.venv/bin/python -m pytest tests/ -q   # 107 tests, 2 files skipped
+
 node tests/test_blink_core.mjs                        # 18 tests
 ```
+
+Tests that need AppKit, Vision or ApplicationServices guard their imports with
+`pytest.importorskip`, so they skip in the plain venv rather than failing
+collection and taking the rest of the suite down with them.
 
 ## Deployment
 
