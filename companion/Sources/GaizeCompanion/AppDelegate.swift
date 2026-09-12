@@ -65,7 +65,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         voiceCommands.onOpenWebsiteCommand = {
             print("AppDelegate: opening website at \(AppDelegate.websiteURL)")
-            NSWorkspace.shared.open(AppDelegate.websiteURL)
+            // Explicitly activate the browser once it opens the page - a
+            // plain NSWorkspace.open can leave it opened but backgrounded
+            // (e.g. if a matching tab already existed), which isn't "go
+            // straight to it" from the user's point of view.
+            let config = NSWorkspace.OpenConfiguration()
+            config.activates = true
+            NSWorkspace.shared.open(AppDelegate.websiteURL, configuration: config) { app, error in
+                if let error {
+                    print("AppDelegate: failed to open website: \(error)")
+                    return
+                }
+                app?.activate(options: [])
+            }
         }
 
         voiceCommands.isMuted = { [weak self] in
@@ -98,12 +110,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Resolved at compile time from this source file's location, so "open
     /// website" works regardless of where Gaize.app is launched from -
     /// relies on the repo layout staying companion/Sources/GaizeCompanion/
-    /// next to a sibling website/ directory.
+    /// with website/ as a sibling of companion/ (i.e. both directly under
+    /// the Gaize repo root). This was off by one directory level before
+    /// (pointed at companion/website/index.html, which doesn't exist) -
+    /// NSWorkspace.shared.open silently did nothing for the bad path with
+    /// no earlier error reporting, so it went unnoticed until adding the
+    /// OpenConfiguration completion handler surfaced the real error.
     private static let websiteURL: URL = {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent() // GaizeCompanion
             .deletingLastPathComponent() // Sources
             .deletingLastPathComponent() // companion
+            .deletingLastPathComponent() // Gaize (repo root)
             .appendingPathComponent("website/index.html")
     }()
 
