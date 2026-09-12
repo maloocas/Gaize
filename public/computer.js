@@ -26,7 +26,10 @@ async function bridge(path, body = {}) {
       body: JSON.stringify(body),
     });
   } catch (error) {
-    throw new Error("Browser could not reach the local bridge. Restart native/bridge.py, then allow Local Network access if your browser asks.", { cause: error });
+    const hosted = !["localhost", "127.0.0.1"].includes(location.hostname);
+    throw new Error(hosted
+      ? "This hosted browser cannot access your Mac's local bridge. Run python3 native/start.py, then use http://localhost:8000 for system control."
+      : "Browser could not reach the local bridge. Restart with python3 native/start.py, then allow Local Network access if your browser asks.", { cause: error });
   }
   let data = {};
   try { data = await res.json(); } catch { /* preserve the HTTP error below */ }
@@ -46,8 +49,9 @@ async function connectBridge() {
     $("bridgeConnect").textContent = controlArmed ? "Connected and armed ✓" : "Bridge found — control stopped";
   } catch (error) {
     bridgeOnline = false;
-    $("bridgeLabel").textContent = "Browser mode · start native/bridge.py for macOS";
+    $("bridgeLabel").textContent = "Browser mode · run python3 native/start.py for macOS";
     $("bridgeConnect").textContent = "Try again";
+    $("systemControlStatus").textContent = error.message;
   }
 }
 
