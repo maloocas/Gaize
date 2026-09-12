@@ -61,3 +61,16 @@ your actions and/or quizzes you → feedback tells you what to work on next.
 Eye-tracking control is a mature space, but nobody's built the missing
 "learn as you go" layer — and now that layer speaks to you instead of just
 showing you a preview.
+
+---
+
+## OpenGaze Assist (merged)
+
+The `native/`, `server/`, `public/`, `api/`, `data/`, `scripts/` and `tests/`
+directories come from the OpenGaze Assist prototype: a webcam eye-gaze and blink
+computer-access system with a large on-screen keyboard, plus an LLM sentence
+accelerator that expands first-letter input into whole sentences.
+
+Its full documentation — setup, gestures, the measured results and the known
+risks — is kept intact in **[README-opengaze-assist.md](README-opengaze-assist.md)**
+rather than being folded in here, so nothing from either project was cut.
