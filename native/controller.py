@@ -58,8 +58,23 @@ class CalibrationView(AppKit.NSView):
     def drawRect_(self, _rect):
         AppKit.NSColor.colorWithRed_green_blue_alpha_(.025,.035,.055,1).setFill()
         AppKit.NSBezierPath.fillRect_(self.bounds())
+        bounds = self.bounds()
+        AppKit.NSColor.colorWithRed_green_blue_alpha_(.72,.10,.12,1).setFill()
+        AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+            ((24,bounds.size.height-76),(150,48)),10,10).fill()
+        small = {AppKit.NSFontAttributeName: AppKit.NSFont.boldSystemFontOfSize_(18),
+                 AppKit.NSForegroundColorAttributeName: AppKit.NSColor.whiteColor()}
+        NSString.stringWithString_("EXIT  (Esc)").drawAtPoint_withAttributes_(
+            (45,bounds.size.height-61), small)
+        if self.controller.failed:
+            attrs = {AppKit.NSFontAttributeName: AppKit.NSFont.boldSystemFontOfSize_(26),
+                     AppKit.NSForegroundColorAttributeName: AppKit.NSColor.whiteColor()}
+            NSString.stringWithString_(
+                "Calibration stopped — camera/eyes were not detected. Press R to retry or Escape to exit."
+            ).drawAtPoint_withAttributes_((bounds.size.width/2-510,bounds.size.height/2),attrs)
+            return
         index = min(self.controller.target_index, len(TARGETS)-1)
-        x, y = TARGETS[index]; bounds = self.bounds()
+        x, y = TARGETS[index]
         point = (x*bounds.size.width, (1-y)*bounds.size.height)
         AppKit.NSColor.colorWithRed_green_blue_alpha_(1,.82,.15,1).setFill()
         AppKit.NSBezierPath.bezierPathWithOvalInRect_(((point[0]-30,point[1]-30),(60,60))).fill()
@@ -69,12 +84,18 @@ class CalibrationView(AppKit.NSView):
         NSString.stringWithString_(text).drawAtPoint_withAttributes_(
             (bounds.size.width/2-170,bounds.size.height-65), attrs)
 
+    def mouseDown_(self, event):
+        point = self.convertPoint_fromView_(event.locationInWindow(), None)
+        bounds = self.bounds()
+        if point.x <= 190 and point.y >= bounds.size.height-95:
+            self.controller.quit_(None)
+
 
 class NativeController(NSObject):
     def init(self):
         self = objc.super(NativeController, self).init()
         if self is None: return None
-        self.running=True; self.control_enabled=False; self.collecting=None
+        self.running=True; self.control_enabled=False; self.collecting=None; self.failed=False
         self.calib_samples=[]; self.calibration=None; self.target_index=0
         self.open_ears=collections.deque(maxlen=120); self.closed_frames=0
         self.closed_since=0.0; self.last_blink=0.0; self.smooth=[.5,.5]
@@ -84,12 +105,15 @@ class NativeController(NSObject):
         self.window.setLevel_(AppKit.NSMainMenuWindowLevel+2); self.window.setContentView_(self.view)
         self.window.setBackgroundColor_(AppKit.NSColor.blackColor()); self.window.makeKeyAndOrderFront_(None)
         AppKit.NSApp.activateIgnoringOtherApps_(True)
+        self.key_monitor = AppKit.NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
+            AppKit.NSEventMaskKeyDown, self.handle_key)
         threading.Thread(target=self.camera_loop,daemon=True).start()
         threading.Thread(target=self.panic_loop,daemon=True).start()
         self.performSelector_withObject_afterDelay_("startTarget:",None,1.5)
         return self
 
     def startTarget_(self, _sender):
+        if self.failed: return
         self.collecting=[]
         self.view.setNeedsDisplay_(True)
         self.performSelector_withObject_afterDelay_("captureTarget:",None,.75)
@@ -105,9 +129,22 @@ class NativeController(NSObject):
             self.performSelector_withObject_afterDelay_("startTarget:",None,.25); return
         try: self.calibration=GazeCalibration(self.calib_samples)
         except ValueError:
-            self.target_index=0; self.calib_samples=[]
-            self.performSelector_withObject_afterDelay_("startTarget:",None,1.0); return
+            self.failed=True; self.view.setNeedsDisplay_(True); return
         self.control_enabled=True; self.window.orderOut_(None)
+
+    @objc.python_method
+    def handle_key(self, event):
+        if event.keyCode() == 53: self.quit_(None)
+        elif event.keyCode() == 15 and self.failed: self.retry_(None)
+        return event
+
+    def retry_(self, _sender):
+        self.failed=False; self.target_index=0; self.calib_samples=[]
+        self.startTarget_(None)
+
+    def quit_(self, _sender):
+        self.running=False; self.control_enabled=False
+        AppKit.NSApp.terminate_(None)
 
     @objc.python_method
     def process(self,gaze,ear,now):
@@ -146,12 +183,10 @@ class NativeController(NSObject):
 
     @objc.python_method
     def panic_loop(self):
-        presses=[]
         def callback(proxy,event_type,event,refcon):
             if Quartz.CGEventGetIntegerValueField(event,Quartz.kCGKeyboardEventKeycode)==53:
-                now=time.monotonic(); presses.append(now); del presses[:-3]
-                if len(presses)==3 and now-presses[0]<=2:
-                    self.control_enabled=False; presses.clear()
+                self.performSelectorOnMainThread_withObject_waitUntilDone_(
+                    "quit:", None, False)
             return event
         tap=Quartz.CGEventTapCreate(Quartz.kCGSessionEventTap,Quartz.kCGHeadInsertEventTap,Quartz.kCGEventTapOptionListenOnly,Quartz.CGEventMaskBit(Quartz.kCGEventKeyDown),callback,None)
         if tap:
