@@ -252,7 +252,9 @@ final class VoiceCommands {
     private func handle(_ result: SFSpeechRecognitionResult) {
         let transcript = result.bestTranscription.formattedString
         let phase = result.isFinal ? "final" : "partial"
-        print("VoiceCommands: transcript [\(phase)] \"\(transcript)\"")
+        let transcriptLog = "VoiceCommands: transcript [\(phase)] \"\(transcript)\""
+        print(transcriptLog)
+        NSLog("%@", transcriptLog)
 
         let segments = result.bestTranscription.segments.map { $0.substring.lowercased() }
         let language = AppSettings.shared.language
