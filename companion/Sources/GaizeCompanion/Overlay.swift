@@ -10,7 +10,7 @@ final class Overlay {
 
     /// `frame` is in AX/Quartz coordinates (top-left origin) — convert to
     /// Cocoa (bottom-left origin) before handing it to NSWindow.
-    func highlight(_ axFrame: CGRect) {
+    func highlight(_ axFrame: CGRect, color: NSColor = .systemBlue) {
         guard axFrame != .zero, let screen = NSScreen.main else { return }
         let screenHeight = screen.frame.height
 
@@ -50,6 +50,7 @@ final class Overlay {
 
         window?.setFrame(cocoaFrame, display: true)
         ringView?.frame = NSRect(origin: .zero, size: cocoaFrame.size)
+        ringView?.strokeColor = color
         ringView?.needsDisplay = true
         window?.orderFrontRegardless()
     }
@@ -125,11 +126,13 @@ final class Overlay {
 }
 
 private final class RingView: NSView {
+    var strokeColor: NSColor = .systemBlue
+
     override func draw(_ dirtyRect: NSRect) {
         let rect = bounds.insetBy(dx: 2, dy: 2)
         let path = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
         path.lineWidth = 4
-        NSColor.systemBlue.setStroke()
+        strokeColor.setStroke()
         path.stroke()
     }
 }

@@ -9,6 +9,7 @@ import ApplicationServices
 /// site), Bridge (local WebSocket server to the website).
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private static let openGazeSelectionNotification = Notification.Name("com.gaize.OpenGazeSelectionChanged")
     private var statusItem: NSStatusItem?
     private let overlay = Overlay()
     private let bridge = Bridge()
@@ -48,6 +49,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         requestAccessibilityPermission()
+
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(openGazeSelectionChanged(_:)),
+            name: Self.openGazeSelectionNotification,
+            object: nil
+        )
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         // 💤 asleep until "hey Gaize", 👁 while listening for commands.
@@ -327,9 +335,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        DistributedNotificationCenter.default().removeObserver(self)
         if let globalClickMonitor {
             NSEvent.removeMonitor(globalClickMonitor)
         }
+    }
+
+    @objc private func openGazeSelectionChanged(_ notification: Notification) {
+        guard let info = notification.userInfo,
+              (info["selected"] as? Bool) == true,
+              let x = info["x"] as? NSNumber,
+              let y = info["y"] as? NSNumber,
+              let width = info["width"] as? NSNumber,
+              let height = info["height"] as? NSNumber else {
+            sensing.clearExternalSelection()
+            overlay.clear()
+            if let highlightedTarget {
+                highlightGeneration += 1
+                highlight(target: highlightedTarget, attempt: 0, generation: highlightGeneration)
+            }
+            return
+        }
+
+        let frame = CGRect(x: x.doubleValue, y: y.doubleValue,
+                           width: width.doubleValue, height: height.doubleValue)
+        let point = CGPoint(x: frame.midX, y: frame.midY)
+        sensing.focusExternalSelection(
+            at: point,
+            frame: frame,
+            role: info["role"] as? String ?? "unknown",
+            title: info["label"] as? String ?? ""
+        )
+        overlay.highlight(frame, color: .systemYellow)
     }
 
     /// Messages updates its accessibility tree asynchronously after an

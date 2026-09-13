@@ -25,7 +25,8 @@ import time
 
 import AppKit
 import AVFoundation
-from Foundation import NSData, NSObject, NSString, NSTimer
+from Foundation import (NSData, NSDistributedNotificationCenter, NSObject,
+                        NSString, NSTimer)
 import cv2
 import objc
 import Quartz
@@ -52,6 +53,7 @@ from swipe_session import SwipeSession
 # detached process. Samantha matches the voice the Gaize companion app speaks
 # with (companion/Sources/GaizeCompanion/Output.swift).
 SPEECH_VOICE = os.environ.get("OPENGAZE_VOICE", "Samantha")
+GAIZE_SELECTION_NOTIFICATION = "com.gaize.OpenGazeSelectionChanged"
 
 _speech_voice = None
 _speech_process = None
@@ -87,6 +89,20 @@ def speak(text: str) -> None:
         _speech_process = subprocess.Popen(command)
     except OSError as exc:
         print(f"[OpenGaze] speech unavailable: {exc}", flush=True)
+
+
+def notify_gaize_selection(target=None) -> None:
+    """Make the companion focus the box chosen by a hard blink."""
+    info = {"selected": bool(target)}
+    if target is not None:
+        info.update({
+            "x": float(target["x"]), "y": float(target["y"]),
+            "width": float(target["width"]), "height": float(target["height"]),
+            "label": str(target.get("label", "")),
+            "role": str(target.get("role", "")),
+        })
+    NSDistributedNotificationCenter.defaultCenter().postNotificationName_object_userInfo_deliverImmediately_(
+        GAIZE_SELECTION_NOTIFICATION, None, info, True)
 
 
 # One shared HID-state event source for every synthetic mouse event.
@@ -1627,6 +1643,7 @@ class NativeController(NSObject):
     @objc.python_method
     def set_selected(self, target):
         self.selected_target=target; self.selected_at=time.monotonic()
+        notify_gaize_selection(target)
         self.target_overlay_view.setNeedsDisplay_(True)
         self.status_item.button().setTitle_(
             f"◎ {str(target.get('label',''))[:24]} · wink to click")
@@ -1635,6 +1652,7 @@ class NativeController(NSObject):
     def clear_selection(self):
         if self.selected_target is None: return
         self.selected_target=None
+        notify_gaize_selection()
         self.target_overlay_view.setNeedsDisplay_(True)
         self.status_item.button().setTitle_("● OpenGaze · active")
 

@@ -20,6 +20,7 @@ final class Sensing {
     private let systemWide = AXUIElementCreateSystemWide()
     private var currentAXElement: AXUIElement?
     private(set) var currentSensed: SensedElement?
+    private var hasExternalSelection = false
 
     /// A short rolling window of recent hit-tests (~250ms at the gaze
     /// tracker's 30fps) - a "select" acts on whichever element was hit
@@ -40,6 +41,9 @@ final class Sensing {
     private var lastGazePoint: CGPoint?
 
     func updateGaze(at point: CGPoint) {
+        // A hard-blinked OpenGaze box remains the active Gaize element until
+        // OpenGaze clears it; the mouse-backed demo tracker must not replace it.
+        guard !hasExternalSelection else { return }
         lastGazePoint = point
 
         if Date().timeIntervalSince(lastHeartbeat) > 1.0 {
@@ -71,6 +75,29 @@ final class Sensing {
             currentAXElement = axElement
             currentSensed = sensed
         }
+    }
+
+    /// OpenGaze has already stabilized and selected this accessibility box.
+    /// Make it authoritative instead of following the physical mouse proxy.
+    func focusExternalSelection(at point: CGPoint, frame: CGRect, role: String, title: String) {
+        hasExternalSelection = true
+        lastGazePoint = point
+        if let (element, sensed) = hitTest(at: point) {
+            currentAXElement = element
+            currentSensed = sensed
+            recentHits = [(element, sensed)]
+            print("Sensing: OpenGaze focus role=\(sensed.role) title=\"\(sensed.title)\"")
+        } else {
+            currentAXElement = nil
+            currentSensed = SensedElement(role: role, title: title, frame: frame)
+            recentHits.removeAll()
+            print("Sensing: OpenGaze focus fallback role=\(role) title=\"\(title)\"")
+        }
+    }
+
+    func clearExternalSelection() {
+        hasExternalSelection = false
+        resetCurrent()
     }
 
     /// Reports a real mouse click in Messages as a completed action without
