@@ -12,6 +12,7 @@ import time
 
 import ApplicationServices as AS
 import AppKit
+import objc
 import Quartz
 
 from bridge import frontmost_app
@@ -35,6 +36,8 @@ MAX_CANDIDATES = 500
 MAX_NODES = 2500
 MAX_DEPTH = 30
 SCAN_BUDGET_SECONDS = 0.5
+last_scan_partial = False     # set by discover_targets
+last_scan_visited = 0
 # Roles whose frame is a viewport: their contents are only visible inside it.
 CLIP_ROLES = {"AXScrollArea", "AXWebArea"}
 # Window-server owners that are never the app the user is looking at.
@@ -60,6 +63,19 @@ def _attr(element, name):
         return value if error == AS.kAXErrorSuccess else None
     except Exception:
         return None
+
+
+def _attrs(element, names):
+    """Fetch several attributes in one cross-process Accessibility message."""
+    try:
+        error, values = AS.AXUIElementCopyMultipleAttributeValues(
+            element, list(names), 0, None)
+        if error == AS.kAXErrorSuccess and values is not None:
+            return dict(zip(names, values))
+    except Exception:
+        pass
+    # Older or unusual AX implementations may reject the batch operation.
+    return {name: _attr(element, name) for name in names}
 
 
 def _point(value):
@@ -103,14 +119,16 @@ def _children(element):
 
     Lists and tables that report their visible children/rows are walked
     through those alone, so off-screen rows are never visited."""
+    names=("AXVisibleChildren","AXVisibleRows","AXChildren","AXRows","AXTabs","AXContents")
+    collections=_attrs(element,names)
     for attribute in ("AXVisibleChildren","AXVisibleRows"):
-        values=_attr(element,attribute)
+        values=collections.get(attribute)
         if values:
             try: return list(values)
             except TypeError: pass
     result=[]; seen=set()
-    for attribute in CHILD_ATTRIBUTES:
-        values=_attr(element,attribute)
+    for attribute in ("AXChildren","AXRows","AXTabs","AXContents"):
+        values=collections.get(attribute)
         if values is None or isinstance(values,(str,bytes)):
             continue
         try: iterator=iter(values)
@@ -295,6 +313,7 @@ def observe_app(pid, on_change):
     """Register an AXObserver on pid's application element that calls
     on_change(notification) on the main run loop. Returns a handle to pass to
     stop_observing (keep it alive), or None."""
+    @objc.callbackFor(AS.AXObserverCreate)
     def callback(_observer, _element, notification, _refcon):
         try: on_change(str(notification))
         except Exception: pass
@@ -349,18 +368,21 @@ def discover_targets(own_pid: int | None = None) -> list[dict]:
     # budget; the Dock and menu-bar icons follow.
     # Each queue entry carries the visible rectangle it lives in ("clip").
     roots=[(focused,0,app["pid"],app["name"],app["bounds"])]
+    extras=[]
     menu_bar=_attr(application,"AXMenuBar")
     if menu_bar is not None:
-        roots.append((menu_bar,0,app["pid"],app["name"],None))
-    roots.extend(root+(None,) for root in _system_ui_roots(own_pid))
+        extras.append((menu_bar,0,app["pid"],app["name"],None))
+    extras.extend(root+(None,) for root in _system_ui_roots(own_pid))
 
     queue = deque(roots)
     targets = []
     visited = 0; seen_elements=set(); seen_boxes=set()
     deadline = time.monotonic() + SCAN_BUDGET_SECONDS
-    while queue and visited < MAX_NODES and len(targets) < MAX_CANDIDATES:
+    while (queue or extras) and visited < MAX_NODES and len(targets) < MAX_CANDIDATES:
         if time.monotonic() >= deadline:
             break
+        if not queue:
+            queue.extend(extras); extras=[]
         element, depth, target_pid, target_app, clip = queue.popleft()
         try: identity=hash(element)
         except Exception: identity=id(element)
@@ -368,8 +390,9 @@ def discover_targets(own_pid: int | None = None) -> list[dict]:
         seen_elements.add(identity); visited += 1
         if visited%25==0:
             time.sleep(.001)  # yield promptly to camera/blink processing
-        position = _point(_attr(element, "AXPosition"))
-        size = _size(_attr(element, "AXSize"))
+        attrs=_attrs(element,("AXPosition","AXSize","AXRole","AXEnabled"))
+        position = _point(attrs["AXPosition"])
+        size = _size(attrs["AXSize"])
         frame=(None if position is None or size is None else
                (float(position.x),float(position.y),float(size.width),float(size.height)))
         # Scrolled out of view: skip it AND everything inside it. Walking the
@@ -378,12 +401,12 @@ def discover_targets(own_pid: int | None = None) -> list[dict]:
         if (clip is not None and frame is not None and frame[2]>0 and frame[3]>0
                 and not overlaps(frame,clip)):
             continue
-        role = _attr(element, "AXRole")
+        role = attrs["AXRole"]
         if role in CLIP_ROLES and frame is not None and frame[2]>0 and frame[3]>0:
             clip=frame if clip is None else (intersect(clip,frame) or clip)
-        enabled = _attr(element, "AXEnabled")
         known_role=role in TARGET_ROLES
         actions=set() if known_role else _actions(element) & ACTIONABLE_ACTIONS
+        enabled = attrs["AXEnabled"]
         if (known_role or actions) and enabled is not False:
             # Generic groups/rows sometimes advertise AXPress for an enormous
             # content region. Keep a custom-role target only when it is named
@@ -410,6 +433,11 @@ def discover_targets(own_pid: int | None = None) -> list[dict]:
         if depth < MAX_DEPTH:
             queue.extend((child,depth+1,target_pid,target_app,clip)
                          for child in _children(element))
+    # Ran out of time or nodes with work left: the result covers only part of
+    # the screen, so callers should keep earlier targets it did not reach.
+    global last_scan_partial,last_scan_visited
+    last_scan_partial=bool(queue or extras)
+    last_scan_visited=visited
     # An auto-hidden Dock still reports its items, just off the screen edge.
     displays=_display_bounds()
     return deduplicate_targets([t for t in targets if _on_a_display(t,displays)])

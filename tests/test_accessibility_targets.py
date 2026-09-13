@@ -59,6 +59,24 @@ def test_browser_and_virtualized_child_collections_are_traversed():
         assert attribute in T.CHILD_ATTRIBUTES
 
 
+def test_child_collections_are_fetched_in_one_cross_process_batch(monkeypatch):
+    calls=[]
+    child=object()
+    monkeypatch.setattr(T,"_attrs",lambda _element,names:
+                        calls.append(tuple(names)) or {name: ([child] if name=="AXVisibleRows" else None)
+                                                       for name in names})
+    assert T._children(object())==[child]
+    assert len(calls)==1
+
+
+def test_focused_window_is_queued_before_menu_and_system_extras():
+    source=(ROOT/"native"/"accessibility_targets.py").read_text()
+    body=source.split("def discover_targets",1)[1]
+    assert 'queue = deque(roots)' in body
+    assert 'extras.append((menu_bar' in body
+    assert 'if not queue:\n            queue.extend(extras)' in body
+
+
 def test_generic_layout_regions_are_not_targets_by_role_alone():
     for role in ("AXRow","AXCell","AXOutlineRow","AXGroup"):
         assert role not in T.TARGET_ROLES
@@ -96,3 +114,19 @@ def test_system_ui_processes_cover_dock_and_menu_extras():
     assert "com.apple.dock" in T.SYSTEM_UI_BUNDLE_IDS
     assert "com.apple.systemuiserver" in T.SYSTEM_UI_BUNDLE_IDS
     assert "com.apple.controlcenter" in T.SYSTEM_UI_BUNDLE_IDS
+
+
+def test_target_signature_ignores_order_and_subpixel_jitter():
+    a={"x":10.0,"y":20.0,"width":30.0,"height":40.0,"role":"AXButton","label":"OK","pid":1}
+    b={"x":50.0,"y":20.0,"width":30.0,"height":40.0,"role":"AXLink","label":"Go","pid":1}
+    jitter=dict(a,x=10.2)
+    assert T.target_signature([a,b])==T.target_signature([b,jitter])
+    assert T.target_signature([a])!=T.target_signature([a,b])
+
+
+def test_system_ui_roots_are_cached(monkeypatch):
+    calls=[]
+    monkeypatch.setattr(T,"_system_ui_roots_uncached",lambda pid:calls.append(pid) or ["root"])
+    monkeypatch.setattr(T,"_system_roots_cache",{"at":-1e9,"roots":[]})
+    assert T._system_ui_roots(1)==["root"] and T._system_ui_roots(1)==["root"]
+    assert len(calls)==1

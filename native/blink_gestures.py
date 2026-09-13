@@ -22,8 +22,8 @@ from dataclasses import dataclass
 @dataclass
 class GestureConfig:
     closed: float = 0.50         # eyeBlink score at or above this = closed
-    asymmetry: float = 0.25      # a wink's closed eye must exceed the other by this
-    wink_min: float = 0.12       # seconds
+    asymmetry: float = 0.20      # a wink's closed eye must exceed the other by this
+    wink_min: float = 0.06       # seconds; real winks log as short as 2 frames
     wink_max: float = 1.20
     blink_max: float = 2.50      # longer both-eye closures are rest, not a gesture
     hard_min: float = 0.40       # natural blinks are ~0.1-0.3s
@@ -46,6 +46,7 @@ class GestureDetector:
         self.start = None            # time the current closure began
         self.both = self.frames = 0
         self.diff = self.squint = 0.0
+        self.peak_diff = 0.0
         self.last_gesture_at = -1e9
 
     @property
@@ -67,9 +68,11 @@ class GestureDetector:
                 self.start = t
                 self.both = self.frames = 0
                 self.diff = self.squint = 0.0
+                self.peak_diff = 0.0
             self.frames += 1
             self.both += left_closed and right_closed
             self.diff += left - right
+            if abs(left-right)>abs(self.peak_diff): self.peak_diff=left-right
             self.squint = max(self.squint, squint)
             return None
         if self.start is None:
@@ -94,10 +97,15 @@ class GestureDetector:
         # Only one eye ever crossed the threshold: that is a wink, even when
         # the gap between the eyes is small on average.
         one_eyed = self.both / n < c.one_eye_share and abs(diff) >= c.one_eye_gap
-        if abs(diff) >= c.asymmetry or one_eyed:
+        # Entry/exit frames often close both eyes and dilute the closure-wide
+        # average even though the intentional wink clearly crossed the cutoff.
+        # Use peak asymmetry for the configured cutoff; keep the averaged gap
+        # for the more permissive one-eye-only path and debug reporting.
+        wink_diff=self.peak_diff if abs(self.peak_diff)>=c.asymmetry else diff
+        if abs(self.peak_diff) >= c.asymmetry or one_eyed:
             if not c.wink_min <= duration <= c.wink_max:
                 return None
-            return "wink_left" if diff > 0 else "wink_right"
+            return "wink_left" if wink_diff > 0 else "wink_right"
         if self.both / n >= 0.5:
             if duration > c.blink_max:
                 return None

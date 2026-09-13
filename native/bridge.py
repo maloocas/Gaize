@@ -127,15 +127,28 @@ def activate(pid: int, timeout: float = 1.2) -> bool:
     """Bring an app forward and wait until it really is frontmost."""
     running = NSRunningApplication.runningApplicationWithProcessIdentifier_(pid)
     if running is None:
+        print(f"[OpenGaze] cannot activate missing pid {pid}",flush=True)
         return False
-    running.activateWithOptions_(1 << 1)   # NSApplicationActivateIgnoringOtherApps
+    # Request all windows as well as ignoring the current app. A full-screen
+    # non-activating keyboard panel can make CGWindow ordering disagree with
+    # the actual key app, so window order must not veto key delivery.
+    requested=bool(running.activateWithOptions_((1 << 0) | (1 << 1)))
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        if running.isActive():
+            return True
         front = frontmost_app()
         if front is not None and front["pid"] == pid:
             return True
         time.sleep(0.05)
-    return False
+    # Activation is asynchronous and NSRunningApplication/CGWindow can lag or
+    # disagree while our overlay is visible. If macOS accepted the request and
+    # the process still exists, continue with the click instead of silently
+    # dropping the user's text.
+    alive=not running.isTerminated()
+    print(f"[OpenGaze] activation confirmation timed out for pid {pid}; "
+          f"requested={requested} alive={alive}; continuing={requested and alive}",flush=True)
+    return requested and alive
 
 
 # ----------------------------------------------------------------- control
@@ -190,18 +203,24 @@ def _focused_editable(target_app: dict | None = None) -> dict | None:
     if pid == os.getpid():
         return None
     ax_app = AS.AXUIElementCreateApplication(pid)
-    focused = _attr(ax_app, "AXFocusedUIElement")
-    if focused is None:
-        return None
-    role = _attr(focused, "AXRole")
-    subrole = _attr(focused, "AXSubrole")
-    result = AS.AXUIElementIsAttributeSettable(focused, "AXValue", None)
-    settable = bool(result[1]) if isinstance(result, tuple) else bool(result)
     roles = {"AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"}
-    if not (role in roles or subrole in roles or settable):
-        return None
-    return {"pid": pid, "app": str(target.get("name") or "Application"),
-            "role": str(subrole or role or "editable")}
+    # Messages often focuses an internal child of its AXTextField rather than
+    # the field itself. Walk upward until the real editable ancestor appears.
+    element = _attr(ax_app, "AXFocusedUIElement")
+    for _ in range(6):
+        if element is None: break
+        role = _attr(element, "AXRole")
+        subrole = _attr(element, "AXSubrole")
+        try:
+            result = AS.AXUIElementIsAttributeSettable(element, "AXValue", None)
+            settable = bool(result[1]) if isinstance(result, tuple) else bool(result)
+        except Exception:
+            settable = False
+        if role in roles or subrole in roles or settable:
+            return {"pid": pid, "app": str(target.get("name") or "Application"),
+                    "role": str(subrole or role or "editable")}
+        element = _attr(element, "AXParent")
+    return None
 
 
 def post_click(point, down, up, button):
@@ -209,6 +228,9 @@ def post_click(point, down, up, button):
     no click count is dropped by Chromium/Electron apps and some native
     controls, so mark it as a single click and hold the button briefly."""
     source = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
+    under = _app_at_point(point)
+    print(f"[OpenGaze] posting button {button} at ({point.x:.0f},{point.y:.0f}) "
+          f"onto {under.get('name', under.get('pid')) if under else 'no window'}", flush=True)
     for kind in (down, up):
         event = Quartz.CGEventCreateMouseEvent(source, kind, point, button)
         Quartz.CGEventSetIntegerValueField(event, Quartz.kCGMouseEventClickState, 1)
@@ -233,7 +255,10 @@ def click(show_keyboard: bool = False):
                Quartz.kCGMouseButtonLeft)
     # Focus changes land just after mouse-up, so look only after that settles.
     time.sleep(0.12)
-    return _focused_editable(target_app)
+    target = _focused_editable(target_app)
+    if target is not None:
+        target.update({"x":float(point.x),"y":float(point.y),"width":0.0,"height":0.0})
+    return target
 
 
 def insert_text(pid: int, text: str) -> bool:
@@ -257,6 +282,24 @@ def insert_text(pid: int, text: str) -> bool:
         Quartz.CGEventSetFlags(event,Quartz.kCGEventFlagMaskCommand)
         Quartz.CGEventPost(Quartz.kCGHIDEventTap,event)
     time.sleep(.15)
+    return True
+
+
+def click_target_and_type(target: dict, text: str) -> bool:
+    """Restore focus by clicking the original text box, then type directly.
+
+    This is the reliable path for Messages: its composer frequently loses AX
+    focus while our non-activating keyboard is visible and can ignore paste.
+    """
+    pid=int(target["pid"])
+    if not activate(pid): return False
+    x=float(target["x"])+float(target.get("width",0))/2
+    y=float(target["y"])+float(target.get("height",0))/2
+    point=Quartz.CGPointMake(x,y)
+    post_click(point,Quartz.kCGEventLeftMouseDown,Quartz.kCGEventLeftMouseUp,
+               Quartz.kCGMouseButtonLeft)
+    time.sleep(.12)
+    type_text(text)
     return True
 
 

@@ -37,6 +37,16 @@ def test_one_eye_closures_are_winks():
     assert run(GestureDetector(), closure(8, left=0.95, right=0.6)) == ["wink_left"]
     # Only one eye crosses the threshold, with a small average gap (real log).
     assert run(GestureDetector(), closure(6, left=0.55, right=0.43)) == ["wink_left"]
+    # A quick two-frame wink (real log: 0.07s, L-R -0.14).
+    assert run(GestureDetector(), closure(2, left=0.40, right=0.54)) == ["wink_right"]
+    # Both eyes can cross the closed threshold, but a 0.20+ L-R separation is
+    # still intentional enough to count as a wink.
+    assert run(GestureDetector(), closure(8, left=0.72, right=0.51)) == ["wink_left"]
+
+
+def test_peak_wink_is_not_diluted_by_both_eye_entry_and_exit_frames():
+    frames=[(0,0,0)]*3+[(.60,.55,0)]*2+[(.82,.50,0)]*3+[(.58,.54,0)]*2
+    assert run(GestureDetector(),frames)==["wink_left"]
 
 
 def test_resting_squint_does_not_turn_every_blink_hard():
@@ -86,6 +96,15 @@ def test_session_merges_offsets_into_one_slot_per_word():
     words = [c["word"] for c in s.slots[0]]
     assert words == ["hello", "hells"]
     assert abs(sum(c["p"] for c in s.slots[0]) - 1) < 1e-9
+
+
+def test_session_ignores_first_300ms_after_word_start():
+    s = SwipeSession(FakeDecoder())
+    s.boundary(10.0)
+    assert s.feed(10, 20, 10.299) is False
+    assert s.path == []
+    assert s.feed(30, 40, 10.300) is True
+    assert s.path == [(30, 40, 10.300)]
 
 
 def test_llm_prompt_parse_and_fallback(monkeypatch):

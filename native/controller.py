@@ -30,10 +30,13 @@ import cv2
 import objc
 import Quartz
 
-from accessibility_targets import discover_targets
+import accessibility_targets
+from accessibility_targets import (discover_targets, observe_app, overlaps,
+                                   stop_observing, target_signature)
 from autocomplete import Autocomplete
 from blink_gestures import GestureDetector
-from bridge import click, insert_text, post_click, press_return, screen_size
+from bridge import (click, click_target_and_type, insert_text, post_click,
+                    press_return, screen_size)
 from llm import decode_sentence, fallback
 from snapping import SNAP_RADIUS, candidates, center, pick, to_zoom, zoom_dest, zoom_region
 from swipe_decoder import SwipeDecoder
@@ -96,18 +99,29 @@ EVENT_SOURCE = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemSta
 
 KEY_RADIUS = 12.0
 SCROLL_DWELL_SECONDS = 0.65
-SELECTION_TIMEOUT = 8.0
+SELECTION_TIMEOUT = 30.0
 EXIT_STRIP_SHARE = 0.22      # share of the keyboard's height
+EDGE_TRIGGER = 24.0          # only the extreme screen boundary fires an action
+EDGE_BAND = 72.0             # visible target band; deliberately larger than trigger
+KEYBOARD_SWIPE = "swipe"
+KEYBOARD_STANDARD = "standard"  # reserved for the later conventional layout
 
-# Calibration: the four corners, then the center. Kept short for now; add
-# points here (and VAL_POINTS for a bias check) when accuracy matters more.
-FREEZE_CLOSURE = 0.10   # either eye above this holds the pointer still
+# Calibration covers the whole screen, then adds a denser 3x3 grid over the
+# letter-key region where swipe accuracy matters most.
+FREEZE_CLOSURE = 0.18   # either eye above this holds the pointer still
 CALIBRATION_FILE = Path.home()/"Library"/"Application Support"/"OpenGaze"/"calibration.pkl"
-# 17 points: an even 4x4 grid spanning the screen (outer dots ~30pt from
-# each edge), then the center.
+# 17 general points: an even 4x4 grid spanning the screen (outer dots ~30pt
+# from each edge), then the center.
 _XS = [.02 + i * (.96 / 3) for i in range(4)]
 _YS = [.032 + i * (.936 / 3) for i in range(4)]
-CAL_POINTS = [(x, y) for y in _YS for x in _XS] + [(.5, .5)]
+SCREEN_CAL_POINTS = [(x, y) for y in _YS for x in _XS] + [(.5, .5)]
+# Nine keyboard points, three wide by three tall. These normalized Quartz
+# coordinates span the padded QWERTY rows rather than the unreliable screen
+# edges or the action/title bands.
+KEYBOARD_CAL_XS = (.10, .50, .90)
+KEYBOARD_CAL_YS = (.36, .55, .74)
+KEYBOARD_CAL_POINTS = [(x,y) for y in KEYBOARD_CAL_YS for x in KEYBOARD_CAL_XS]
+CAL_POINTS = SCREEN_CAL_POINTS + KEYBOARD_CAL_POINTS
 VAL_POINTS = []
 # Eye naming: set OPENGAZE_SWAP_EYES=1 if winks click the wrong button.
 SWAP_EYES = os.environ.get("OPENGAZE_SWAP_EYES") == "1"
@@ -131,6 +145,24 @@ def quartz_cursor():
     must use NSEvent.mouseLocation() instead.
     """
     return Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
+
+
+def merge_partial_scan(new, old):
+    """A scan cut short by its time budget only reached part of the screen.
+    The focused app is scanned first, so its new result is authoritative even
+    when incomplete. Never mix in a previous app or stale pre-scroll boxes."""
+    return list(new)
+
+
+def _background_qos():
+    """Run the calling thread at utility QoS, so the scheduler favours the
+    user's apps (and our pointer) over accessibility scans."""
+    try:
+        import ctypes
+        libc=ctypes.CDLL("/usr/lib/libSystem.dylib")
+        libc.pthread_set_qos_class_self_np(0x11,0)   # QOS_CLASS_UTILITY
+    except Exception:
+        pass
 
 
 def move_pointer(x, y, dragging=False):
@@ -243,7 +275,7 @@ class SwipeTraceView(AppKit.NSView):
 
 
 class ExitStripView(AppKit.NSView):
-    """The top band of the keyboard: looking into it finishes the sentence."""
+    """Draw the swipe keyboard's overshoot-friendly edge actions."""
     controller=objc.ivar()
 
     def initWithController_frame_(self,controller,frame):
@@ -255,13 +287,22 @@ class ExitStripView(AppKit.NSView):
         return None
 
     def drawRect_(self,_rect):
-        bounds=self.bounds()
-        hover=getattr(self.controller,"exit_hover",False)
-        AppKit.NSColor.colorWithRed_green_blue_alpha_(
-            *((.20,.62,.40,.95) if hover else (.12,.30,.24,.90))).setFill()
-        AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
-            AppKit.NSInsetRect(bounds,10,8),20,20).fill()
-        _centered_label("LOOK HERE TO FINISH THE SENTENCE",bounds,34)
+        bounds=self.bounds(); w=bounds.size.width; h=bounds.size.height
+        active=getattr(self.controller,"edge_action",None)
+        zones=(
+            ("FINISH",AppKit.NSMakeRect(0,h-EDGE_BAND,w/2,EDGE_BAND),"FINISH SENTENCE"),
+            ("CLOSE",AppKit.NSMakeRect(w/2,h-EDGE_BAND,w/2,EDGE_BAND),"CLOSE"),
+            ("INSERT",AppKit.NSMakeRect(0,h/2,EDGE_BAND,h/2-EDGE_BAND),"TYPE"),
+            ("ENTER",AppKit.NSMakeRect(0,0,EDGE_BAND,h/2),"SEND"),
+            ("DELETE",AppKit.NSMakeRect(w-EDGE_BAND,0,EDGE_BAND,h-EDGE_BAND),"DEL"),
+        )
+        for action,rect,label in zones:
+            AppKit.NSColor.colorWithRed_green_blue_alpha_(
+                *((.18,.67,.43,.96) if action==active else (.10,.27,.34,.90))).setFill()
+            path=AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                AppKit.NSInsetRect(rect,6,6),16,16)
+            path.fill()
+            _centered_label(label,rect,18)
 
 
 class KeyView(AppKit.NSView):
@@ -404,8 +445,7 @@ class ScrollZoneView(AppKit.NSView):
 
 
 class TargetOverlayView(AppKit.NSView):
-    """Click-through outlines for controls exposed by macOS Accessibility,
-    plus a heavy highlight on the currently selected one."""
+    """Static target boxes, redrawn only when discovery results change."""
     controller=objc.ivar()
 
     def initWithController_frame_(self,controller,frame):
@@ -424,17 +464,34 @@ class TargetOverlayView(AppKit.NSView):
         return ((x,y),(target["width"],target["height"]))
 
     def drawRect_(self,_rect):
-        selected=getattr(self.controller,"selected_target",None)
-        # Debug: every target thin grey, the ones a hard blink would consider
-        # thick green, and the snap radius R as a circle around the pointer.
-        p=quartz_cursor()
-        near=candidates(self.controller.accessibility_targets,p.x,p.y)
+        if not self.controller.target_boxes_enabled: return
+        colors={
+            "text":AppKit.NSColor.colorWithRed_green_blue_alpha_(.18,.88,1,.92),
+            "navigation":AppKit.NSColor.colorWithRed_green_blue_alpha_(.72,.42,1,.92),
+            "setting":AppKit.NSColor.colorWithRed_green_blue_alpha_(1,.72,.18,.92),
+            "action":AppKit.NSColor.colorWithRed_green_blue_alpha_(.25,1,.55,.92),
+        }
         for target in self.controller.accessibility_targets:
-            inside=any(t is target for t in near)
-            (AppKit.NSColor.colorWithRed_green_blue_alpha_(.2,1,.3,1) if inside else
-             AppKit.NSColor.colorWithRed_green_blue_alpha_(.2,.8,1,.8)).setStroke()
-            box=AppKit.NSBezierPath.bezierPathWithRect_(self._rect(target))
-            box.setLineWidth_(4 if inside else 2); box.stroke()
+            rect=self._rect(target)
+            if not AppKit.NSIntersectsRect(rect,self.bounds()): continue
+            colors.get(target["kind"],colors["action"]).setStroke()
+            box=AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                AppKit.NSInsetRect(rect,-2,-2),7,7)
+            box.setLineWidth_(2.5); box.stroke()
+
+
+class TargetFeedbackView(TargetOverlayView):
+    """Transient click and selection feedback.
+
+    Target boxes live in the sibling TargetOverlayView. This full-screen view
+    is invalidated only while a click mark is fading or selection changes;
+    invalidating it for every pointer frame makes WindowServer repaint a
+    screen-sized transparent surface even when there is almost nothing to draw.
+    """
+
+    def drawRect_(self,_rect):
+        selected=getattr(self.controller,"selected_target",None)
+        p=quartz_cursor()
         # Click markers: blue L / red R ring where each click landed, fading.
         now=time.monotonic()
         self.controller.click_marks=[m for m in self.controller.click_marks if now-m[3]<.8]
@@ -448,27 +505,6 @@ class TargetOverlayView(AppKit.NSView):
             mark=AppKit.NSBezierPath.bezierPathWithOvalInRect_(((x-r,y-r),(2*r,2*r)))
             mark.setLineWidth_(5); mark.stroke()
             _label(kind,(x-7,y-10),22)
-        screen=self.controller.target_overlay_screen
-        cx=p.x-screen.origin.x; cy=screen.size.height-p.y+screen.origin.y
-        AppKit.NSColor.colorWithRed_green_blue_alpha_(1,.3,.8,.9).setStroke()
-        ring=AppKit.NSBezierPath.bezierPathWithOvalInRect_(
-            ((cx-SNAP_RADIUS,cy-SNAP_RADIUS),(2*SNAP_RADIUS,2*SNAP_RADIUS)))
-        ring.setLineWidth_(2); ring.stroke()
-        if self.controller.target_boxes_enabled:
-            colors={
-                "text":AppKit.NSColor.colorWithRed_green_blue_alpha_(.18,.88,1,.92),
-                "navigation":AppKit.NSColor.colorWithRed_green_blue_alpha_(.72,.42,1,.92),
-                "setting":AppKit.NSColor.colorWithRed_green_blue_alpha_(1,.72,.18,.92),
-                "action":AppKit.NSColor.colorWithRed_green_blue_alpha_(.25,1,.55,.92),
-            }
-            for target in self.controller.accessibility_targets:
-                rect=self._rect(target)
-                if not AppKit.NSIntersectsRect(rect,self.bounds()): continue
-                color=colors.get(target["kind"],colors["action"])
-                color.setStroke()
-                box=AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
-                    AppKit.NSInsetRect(rect,-2,-2),7,7)
-                box.setLineWidth_(2.5); box.stroke()
         if selected is not None:
             AppKit.NSColor.colorWithRed_green_blue_alpha_(1,.85,.1,1).setStroke()
             box=AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
@@ -698,7 +734,9 @@ class NativeController(NSObject):
         self.keyboard_title=None; self.suggestion_row_y=0.0
         self.keyboard_text=""; self.keyboard_target=None
         self.keyboard_glass=None; self.suggestion_buttons=[]
+        self.keyboard_mode=KEYBOARD_SWIPE
         self.exit_strip=None; self.exit_strip_height=0; self.exit_hover=False
+        self.edge_action=None
         self.decoding=False
         self.swipe_decoder=SwipeDecoder(SWIPE_WORDS)
         self.swipe=SwipeSession(self.swipe_decoder)
@@ -709,6 +747,7 @@ class NativeController(NSObject):
         self.scroll_hover_since=0.0; self.scroll_dwell_progress=0.0
         self.accessibility_targets=[]; self.target_boxes_enabled=True
         self.target_scan_running=False
+        self.ui_tick=0
         self.crosshair_view=CrosshairView.alloc().initWithController_(self)
         self.crosshair_window=AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             ((0,0),(52,52)),AppKit.NSWindowStyleMaskBorderless,
@@ -735,7 +774,7 @@ class NativeController(NSObject):
         self.build_scroll_controls()
         self.build_debug_window()
         self.crosshair_timer=NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-            1/60,self,"updateCrosshair:",None,True)
+            1/30,self,"updateCrosshair:",None,True)
         # A menu-bar control keeps the app out of the way while providing a
         # visible, mouse-accessible exit in addition to the Escape panic key.
         self.status_item=AppKit.NSStatusBar.systemStatusBar().statusItemWithLength_(
@@ -783,11 +822,17 @@ class NativeController(NSObject):
             AppKit.NSEventMaskKeyDown,self.on_global_key)
         threading.Thread(target=self.panic_loop,daemon=True).start()
         self.request_camera_access()
+        # Scans are event-driven (app switch, AX window/layout notifications,
+        # scrolling, clicks), plus this timer for changes no notification
+        # reports. requestTargetScan_ caps how much time scanning can take.
         self.target_scan_timer=NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
             1.75,self,"requestTargetScan:",None,True)
-        self.target_scan_again=False
+        self.target_scan_again=False; self.target_signature=None; self.ax_observer=None
         AppKit.NSWorkspace.sharedWorkspace().notificationCenter().addObserver_selector_name_object_(
             self,"appActivated:",AppKit.NSWorkspaceDidActivateApplicationNotification,None)
+        self.scroll_wheel_monitor=AppKit.NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
+            AppKit.NSEventMaskScrollWheel,lambda _e:self.noteTargetChange_(None))
+        self.observe_frontmost_app()
         self.requestTargetScan_(None)
         return self
 
@@ -878,9 +923,14 @@ class NativeController(NSObject):
             AppKit.NSWindowCollectionBehaviorFullScreenAuxiliary|
             AppKit.NSWindowCollectionBehaviorStationary)
         self.target_overlay_screen=screen
-        self.target_overlay_view=TargetOverlayView.alloc().initWithController_frame_(
+        root=AppKit.NSView.alloc().initWithFrame_(((0,0),screen.size))
+        self.target_boxes_view=TargetOverlayView.alloc().initWithController_frame_(
             self,((0,0),screen.size))
-        panel.setContentView_(self.target_overlay_view); panel.orderFrontRegardless()
+        self.target_overlay_view=TargetFeedbackView.alloc().initWithController_frame_(
+            self,((0,0),screen.size))
+        root.addSubview_(self.target_boxes_view)
+        root.addSubview_(self.target_overlay_view)
+        panel.setContentView_(root); panel.orderFrontRegardless()
         self.target_overlay_window=panel
 
     @objc.python_method
@@ -924,7 +974,7 @@ class NativeController(NSObject):
         self.target_boxes_enabled=not self.target_boxes_enabled
         self.target_boxes_item.setTitle_(
             "Hide Target Boxes" if self.target_boxes_enabled else "Show Target Boxes")
-        self.target_overlay_view.setNeedsDisplay_(True)
+        self.target_boxes_view.setNeedsDisplay_(True)
 
     def toggleEyePointer_(self,_sender):
         self.eye_pointer=not self.eye_pointer
@@ -936,6 +986,27 @@ class NativeController(NSObject):
 
     def appActivated_(self,_note):
         # Switching apps must refresh the boxes now, not on the next tick.
+        self.observe_frontmost_app()
+        self.requestTargetScan_(None)
+
+    @objc.python_method
+    def observe_frontmost_app(self):
+        """Follow the frontmost app's window/layout changes via AXObserver."""
+        try: pid=int(AppKit.NSWorkspace.sharedWorkspace().frontmostApplication().processIdentifier())
+        except Exception: return
+        current=getattr(self,"ax_observer",None)
+        if pid==os.getpid() or (current and current["pid"]==pid): return
+        stop_observing(current)
+        self.ax_observer=observe_app(pid,lambda _n:self.noteTargetChange_(None))
+
+    def noteTargetChange_(self,_sender):
+        # Debounce bursts (window drags, scroll momentum, layout storms) into
+        # one scan shortly after they settle.
+        AppKit.NSObject.cancelPreviousPerformRequestsWithTarget_selector_object_(
+            self,"debouncedTargetScan:",None)
+        self.performSelector_withObject_afterDelay_("debouncedTargetScan:",None,.2)
+
+    def debouncedTargetScan_(self,_sender):
         self.requestTargetScan_(None)
 
     def requestTargetScan_(self,_sender):
@@ -944,8 +1015,10 @@ class NativeController(NSObject):
         if self.target_scan_running:
             self.target_scan_again=True   # run once more when this one ends
             return
-        # Scans cost the scanned app CPU; never run them back to back.
-        wait=1.0-(time.monotonic()-getattr(self,"last_scan_at",0.0))
+        # Scan often, but cap the duty cycle: rest at least 3x as long as the
+        # last scan took, so scanning never uses more than ~25% of the time.
+        rest=max(.4,3*getattr(self,"last_scan_seconds",0.0))
+        wait=rest-(time.monotonic()-getattr(self,"last_scan_end",0.0))
         if wait>0:
             if not getattr(self,"target_scan_deferred",False):
                 self.target_scan_deferred=True
@@ -955,27 +1028,43 @@ class NativeController(NSObject):
         self.target_scan_again=False
         self.target_scan_running=True
         def scan():
+            _background_qos()
             started=time.monotonic()
-            try: targets=discover_targets(os.getpid())
-            except Exception: targets=[]
+            try:
+                targets=discover_targets(os.getpid())
+                if accessibility_targets.last_scan_partial:
+                    targets=merge_partial_scan(targets,self.accessibility_targets)
+            except Exception:
+                targets=self.accessibility_targets   # a failed scan keeps the old boxes
             self.last_scan_seconds=time.monotonic()-started
+            self.last_scan_end=time.monotonic()
             self.performSelectorOnMainThread_withObject_waitUntilDone_(
                 "applyTargets:",targets,False)
         threading.Thread(target=scan,daemon=True).start()
 
     def applyTargets_(self,targets):
+        self.target_scan_running=False
+        signature=target_signature(targets)
+        # Always replace and invalidate the layer. A scan is a fresh snapshot;
+        # treating an equal signature as permission to preserve AppKit's old
+        # backing store made boxes appear frozen after window/space changes.
+        self.accessibility_targets=[dict(t) for t in (targets or [])]
+        self.target_boxes_view.setNeedsDisplay_(True)
+        if signature==self.target_signature:
+            if self.target_scan_again: self.requestTargetScan_(None)
+            return
+        self.target_signature=signature
         print(f"[OpenGaze] targets: {len(targets or [])} "
-              f"(scan {getattr(self,'last_scan_seconds',0)*1000:.0f} ms)",flush=True)
+              f"(scan {getattr(self,'last_scan_seconds',0)*1000:.0f} ms, "
+              f"nodes {getattr(accessibility_targets,'last_scan_visited',0)}, "
+              f"{'partial' if accessibility_targets.last_scan_partial else 'complete'})",flush=True)
         try:   # debug dump: the shell is not Accessibility-trusted, this app is
             Path("/private/tmp/opengaze-targets.json").write_text(json.dumps(
                 [{k:v for k,v in dict(t).items() if isinstance(v,(str,int,float))}
                  for t in (targets or [])],indent=0))
         except Exception:
             pass
-        self.accessibility_targets=[dict(t) for t in (targets or [])]
-        self.target_scan_running=False
         if self.target_scan_again: self.requestTargetScan_(None)
-        self.target_overlay_view.setNeedsDisplay_(True)
 
     # ------------------------------------------------------------ scrolling
 
@@ -1192,7 +1281,11 @@ class NativeController(NSObject):
                 self.set_camera_status(f"camera {camera_name} on")
             last_frame=now; self.latest_frame_at=now; failures=0
             try:
+                inference_started=time.monotonic()
                 sample,obs=self.engine.process(frame,now)
+                elapsed_ms=(time.monotonic()-inference_started)*1000
+                previous=getattr(self,"inference_ms",elapsed_ms)
+                self.inference_ms=previous*.9+elapsed_ms*.1
             except Exception as error:
                 print(f"[OpenGaze] gaze inference failed: {error}",flush=True)
                 continue
@@ -1221,6 +1314,7 @@ class NativeController(NSObject):
                 print(f"[OpenGaze] gaze {dict(stats)}{where}",flush=True)
                 total=sum(stats.values()) or 1
                 self.debug_rates=(f"{total/(now-stats_at):.0f} fps · "+
+                                  f"infer {getattr(self,'inference_ms',0):.0f} ms · "+
                                   " ".join(f"{k} {100*v//total}%" for k,v in stats.items()))
                 stats.clear(); stats_at=now
             closure=self.gestures.last_closure
@@ -1435,6 +1529,7 @@ class NativeController(NSObject):
         move_pointer(sample.x,sample.y,self.drag_mode)
 
     def updateCrosshair_(self, _timer):
+        self.ui_tick+=1
         self.apply_gaze()
         while self.gesture_queue:
             gesture,at=self.gesture_queue.popleft()
@@ -1464,8 +1559,14 @@ class NativeController(NSObject):
             self.clear_selection()
         if self.calibrating and self.cal_index>=0:
             self.cal_view.setNeedsDisplay_(True)
-        self.debug_view.setNeedsDisplay_(True)
-        self.target_overlay_view.setNeedsDisplay_(True)
+        # The preview is produced at 10fps; decoding the same JPEG 60 times a
+        # second needlessly starves AppKit (including the emergency-stop key).
+        if self.ui_tick%3==0:
+            self.debug_view.setNeedsDisplay_(True)
+        # Animate click feedback at 15fps, then let the full-screen transparent
+        # overlay remain completely idle.
+        if self.click_marks and self.ui_tick%2==0:
+            self.target_overlay_view.setNeedsDisplay_(True)
         self.crosshair_view.setNeedsDisplay_(True)
 
     def flashCrosshair_(self, _sender):
@@ -1504,10 +1605,10 @@ class NativeController(NSObject):
             # happen while the target app is still reacting to it.
             speak(click_phrase(target.get("label") if target else None))
             if target is not None:
-                self.clear_selection()
                 move_pointer(*center(target))
             if gesture=="wink_left": self.leftClick_(None)
             else: self.rightClick_(None)
+            if target is not None: self.clear_selection()
 
     @objc.python_method
     def select_near_gaze(self):
@@ -1605,9 +1706,11 @@ class NativeController(NSObject):
         if self.paused and not on_safety: return
         if self.scroll_direction_at_pointer(): return
         where=quartz_cursor()
+        selected_hint=self.selected_target
         print(f"[OpenGaze] left click at ({where.x:.0f},{where.y:.0f})",flush=True)
         self.flashCrosshair_(None)
         here=quartz_cursor(); self.click_marks.append(("L",here.x,here.y,time.monotonic()))
+        self.target_overlay_view.setNeedsDisplay_(True)
         self.performSelector_withObject_afterDelay_("requestTargetScan:",None,.4)
         on_keyboard=self.pointer_over_keyboard()
         target=click(show_keyboard=False)
@@ -1615,7 +1718,22 @@ class NativeController(NSObject):
             return          # a safety action must never reopen the keyboard
         if on_keyboard:
             return          # the panel's own key handling deals with this click
-        if target and int(target["pid"]) != os.getpid(): self.show_keyboard(target)
+        # Messages sometimes reports an internal, non-editable child as the
+        # focused element after clicking its composer. A selected AX text box
+        # is already authoritative, so use it when the focus probe misses.
+        if target is None and selected_hint is not None and selected_hint.get("kind")=="text":
+            target={"pid":int(selected_hint["pid"]),
+                    "app":str(selected_hint.get("app") or "Application"),
+                    "role":str(selected_hint.get("role") or "editable"),
+                    "x":selected_hint["x"],"y":selected_hint["y"],
+                    "width":selected_hint["width"],"height":selected_hint["height"]}
+            print(f"[OpenGaze] using selected text target fallback for {target['app']}",flush=True)
+        elif target is not None and selected_hint is not None and selected_hint.get("kind")=="text":
+            for name in ("x","y","width","height"):
+                target[name]=selected_hint[name]
+        if target and int(target["pid"]) != os.getpid():
+            print(f"[OpenGaze] opening keyboard for {target['app']} {target['role']}",flush=True)
+            self.show_keyboard(target)
 
     def rightClick_(self, _sender):
         if self.pointer_over_keyboard():
@@ -1625,6 +1743,7 @@ class NativeController(NSObject):
         self.flashCrosshair_(None)
         where=quartz_cursor()
         self.click_marks.append(("R",where.x,where.y,time.monotonic()))
+        self.target_overlay_view.setNeedsDisplay_(True)
         self.performSelector_withObject_afterDelay_("requestTargetScan:",None,.4)
         # kCGEventRightMouseDown / kCGEventRightMouseUp with kCGMouseButtonRight,
         # click count 1 and a short hold: see bridge.post_click.
@@ -1680,16 +1799,30 @@ class NativeController(NSObject):
 
     @objc.python_method
     def track_keyboard_pointer(self):
-        """Feed the swipe session and watch the finish strip, every tick."""
+        """Feed swipe input and fire an edge action once when entering its boundary."""
         local=self.panel_point()
-        in_strip=local[1]>=self.keyboard_window.frame().size.height-self.exit_strip_height
-        if in_strip!=self.exit_hover:
-            self.exit_hover=in_strip; self.exit_strip.setNeedsDisplay_(True)
-        if in_strip:
-            if self.swipe.recording: self.finish_sentence()
+        width=self.keyboard_window.frame().size.width
+        height=self.keyboard_window.frame().size.height
+        x,y=local
+        action=None
+        # Corners belong to the top actions. Everywhere else the side actions
+        # are split as requested. Gaze can overshoot because Quartz clamps the
+        # pointer to these outermost screen coordinates.
+        if y>=height-EDGE_TRIGGER:
+            action="FINISH" if x<width/2 else "CLOSE"
+        elif x<=EDGE_TRIGGER:
+            action="INSERT" if y>=height/2 else "ENTER"
+        elif x>=width-EDGE_TRIGGER:
+            action="DELETE"
+        previous=self.edge_action
+        if action!=previous:
+            self.edge_action=action
+            if self.exit_strip is not None: self.exit_strip.setNeedsDisplay_(True)
+            if action is not None: self.trigger_edge_action(action)
+        if action is not None:
             return
-        self.swipe.feed(local[0],local[1],time.monotonic())
-        if self.swipe_recording:
+        accepted=self.swipe.feed(local[0],local[1],time.monotonic())
+        if self.swipe_recording and accepted:
             if not self.swipe_path or abs(local[0]-self.swipe_path[-1][0])>1.2 \
                     or abs(local[1]-self.swipe_path[-1][1])>1.2:
                 self.swipe_path.append(local)
@@ -1697,11 +1830,21 @@ class NativeController(NSObject):
                 self.swipe_trace_view.setNeedsDisplay_(True)
 
     @objc.python_method
+    def trigger_edge_action(self, action):
+        """Perform one action per boundary entry, never once per UI tick."""
+        if action=="FINISH":
+            if self.swipe.recording: self.finish_sentence()
+        else:
+            self.keyPressed_(action)
+
+    @objc.python_method
     def swipe_boundary(self, at):
         """A natural blink: end the current word and start the next."""
         self.swipe.boundary(at)
         self.swipe_recording=True
-        self.swipe_path=[self.panel_point()]
+        # Do not draw the blink-induced eye drop; SwipeSession starts accepting
+        # both decoding and trace samples after its post-blink delay.
+        self.swipe_path=[]
         self.render_swipe()
 
     @objc.python_method
@@ -1774,6 +1917,13 @@ class NativeController(NSObject):
 
     @objc.python_method
     def build_keyboard(self):
+        """Build the selected keyboard type; standard is intentionally later."""
+        if self.keyboard_mode != KEYBOARD_SWIPE:
+            raise NotImplementedError("standard keyboard is not implemented yet")
+        self.build_swipe_keyboard()
+
+    @objc.python_method
+    def build_swipe_keyboard(self):
         """Create the full-screen keyboard panel once and keep it.
 
         One panel, reused: allocating a new NSWindow per open stacked invisible
@@ -1819,11 +1969,11 @@ class NativeController(NSObject):
 
         self.keyboard_window=panel; self.keyboard_glass=glass
 
-        strip=round(height*EXIT_STRIP_SHARE); self.exit_strip_height=strip
+        strip=EDGE_BAND; self.exit_strip_height=strip
         self.exit_strip=ExitStripView.alloc().initWithController_frame_(
-            self,((0,height-strip),(width,strip)))
+            self,((0,0),(width,height)))
         glass.addSubview_(self.exit_strip)
-        top=height-strip
+        top=height-EDGE_BAND
 
         self.keyboard_title=AppKit.NSTextField.labelWithString_("")
         self.keyboard_title.setFrame_(((30,top-40),(width-190,26)))
@@ -1832,12 +1982,6 @@ class NativeController(NSObject):
         self.keyboard_title.setTextColor_(
             AppKit.NSColor.colorWithRed_green_blue_alpha_(.45,.85,1,.95))
         glass.addSubview_(self.keyboard_title)
-
-        # Always-present, always-reachable exit. A keyboard that covers the
-        # screen with no obvious way out is worse than no keyboard.
-        close=KeyView.alloc().initWithFrame_controller_title_value_accent_(
-            ((width-110,top-52),(80,44)),self,"✕","CLOSE",False)
-        glass.addSubview_(close)
 
         self.keyboard_display=AppKit.NSTextField.alloc().initWithFrame_(
             ((30,top-112),(width-60,54)))
@@ -1854,9 +1998,12 @@ class NativeController(NSObject):
         self.suggestion_row_y=top-180
         rows=("QWERTYUIOP","ASDFGHJKL","ZXCVBNM")
         self.key_centers={}
-        gap=10; bottom=22+64+16
-        key_h=(self.suggestion_row_y-14-bottom-gap*2)/3
-        key_w=min(170,(width-60-gap*9)/10)
+        gap=10
+        # The longest row is ten keys. Two additional key widths provide a
+        # full-key safety margin at both horizontal edges. Four row heights
+        # similarly leave one key height below the three letter rows.
+        key_w=min(170,(width-gap*11)/12)
+        key_h=(self.suggestion_row_y-14-gap*3)/4
         y=self.suggestion_row_y-14-key_h
         for row in rows:
             total=key_w*len(row)+gap*(len(row)-1); x=(width-total)/2
@@ -1867,15 +2014,6 @@ class NativeController(NSObject):
                 x+=key_w+gap
             y-=key_h+gap
         self.swipe_decoder.set_layout(self.key_centers,key_w)
-
-        actions=(("⌫","DELETE",1.0),("SPACE","SPACE",2.2),("CLOSE","CLOSE",0.9),
-                 ("TYPE INTO APP ↗","INSERT",1.7),("SEND ⏎","ENTER",1.3))
-        unit=(width-60-gap*(len(actions)-1))/sum(a[2] for a in actions); x=30
-        for label,value,span in actions:
-            glass.addSubview_(self.make_key(
-                label,value,((x,22),(unit*span,64)),
-                2 if value=="INSERT" else 1 if value=="ENTER" else 0))
-            x+=unit*span+gap
 
         self.swipe_trace_view=SwipeTraceView.alloc().initWithController_frame_(
             self,((0,0),(width,height)))
@@ -1903,6 +2041,7 @@ class NativeController(NSObject):
             self.keyboard_display.setStringValue_("")
             self.refresh_suggestions()
         self.keyboard_title.setStringValue_(self.keyboard_hint())
+        self.edge_action=None
         # orderFrontRegardless, never makeKeyAndOrderFront_: the target app must
         # keep keyboard focus or the insert has nowhere to land.
         self.keyboard_window.orderFrontRegardless()
@@ -1911,6 +2050,7 @@ class NativeController(NSObject):
         if self.keyboard_window is not None:
             self.swipe_recording=False; self.swipe_path=[]
             self.swipe.clear()
+            self.edge_action=None
             self.keyboard_window.orderOut_(None)
             if self.status_item is not None:
                 self.status_item.button().setTitle_("● OpenGaze · active")
@@ -1940,7 +2080,11 @@ class NativeController(NSObject):
             self.flush_swipe()
             text=self.keyboard_text; target=self.keyboard_target
             self.hideKeyboard_(None)
-            if text and target: insert_text(int(target["pid"]),text)
+            if text and target:
+                ok=(click_target_and_type(target,text)
+                    if "x" in target and "y" in target
+                    else insert_text(int(target["pid"]),text))
+                print(f"[OpenGaze] type into {target.get('app')}: {'ok' if ok else 'failed'}",flush=True)
             return
         elif value=="ENTER":
             # Deliver whatever has been composed, then Return. With an empty

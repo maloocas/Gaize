@@ -11,16 +11,18 @@ import math
 
 # Seconds after the boundary: ~p5/p25/p50/p75/p90 of 47 measured inter-word gaps.
 OFFSETS = (0.150, 0.200, 0.275, 0.350, 0.450)
+START_DELAY = 0.300
 
 
 class SwipeSession:
     def __init__(self, decoder, offsets=OFFSETS, per_offset=3, radius=1.5,
-                 temperature=0.5):
+                 temperature=0.5, start_delay=START_DELAY):
         self.decoder = decoder
         self.offsets = offsets
         self.per_offset = per_offset
         self.radius = radius
         self.temperature = temperature
+        self.start_delay = start_delay
         self.slots = []          # one [{word, p}] list per word, best first
         self.path = None         # [(x, y, t)] while recording
         self.t0 = 0.0
@@ -32,12 +34,16 @@ class SwipeSession:
 
     def feed(self, x, y, t):
         self.last = (x, y, t)
-        if self.path is not None:
+        if self.path is not None and t >= self.t0 + self.start_delay:
             self.path.append(self.last)
+            return True
+        return False
 
     def start(self, t):
         self.t0 = t
-        self.path = [(self.last[0], self.last[1], t)] if self.last else []
+        # Eye position commonly drops during the blink that starts a word.
+        # Begin with an empty path so that position cannot leak into decoding.
+        self.path = []
 
     def end(self):
         """Close the current word. Returns its candidates (maybe empty)."""

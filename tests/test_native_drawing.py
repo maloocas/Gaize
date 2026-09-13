@@ -39,6 +39,7 @@ class _Stub:
     long_blink_armed = False
     long_blink_progress = 0.0
     swipe_path = []
+    edge_action = None
 
 
 RETICLE_STATES = [
@@ -84,3 +85,23 @@ def test_swipe_trace_draws_with_and_without_a_path():
         view = C.SwipeTraceView.alloc().initWithController_frame_(
             stub, ((0, 0), (400, 300)))
         view.drawRect_(((0, 0), (400, 300)))
+
+
+@pytest.mark.parametrize("action", [None, "FINISH", "CLOSE", "INSERT", "ENTER", "DELETE"])
+def test_swipe_edge_actions_draw(action):
+    stub = _Stub()
+    stub.edge_action = action
+    view = C.ExitStripView.alloc().initWithController_frame_(
+        stub, ((0, 0), (1200, 800)))
+    view.drawRect_(((0, 0), (1200, 800)))
+
+
+def test_target_feedback_draws_without_targets():
+    stub = _Stub()
+    stub.target_overlay_screen = AppKit.NSScreen.mainScreen().frame()
+    stub.accessibility_targets = []
+    stub.click_marks = []
+    stub.selected_target = None
+    view = C.TargetFeedbackView.alloc().initWithController_frame_(
+        stub, ((0, 0), (400, 300)))
+    view.drawRect_(((0, 0), (400, 300)))
