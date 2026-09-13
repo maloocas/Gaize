@@ -10,6 +10,8 @@ final class Bridge {
 
     var onHighlightRequest: ((String) -> Void)?
     var onSetLanguage: ((String) -> Void)?
+    /// The website started a guided goal and wants Messages in front.
+    var onOpenMessagesRequest: (() -> Void)?
     /// Debug-only: triggers the same thing "explain"/"select" (the voice
     /// commands) do, for testing without needing to actually speak.
     var onDebugExplain: (() -> Void)?
@@ -94,6 +96,10 @@ final class Bridge {
             guard let language = json["language"] as? String else { return }
             DispatchQueue.main.async { [weak self] in
                 self?.onSetLanguage?(language)
+            }
+        case "open_messages":
+            DispatchQueue.main.async { [weak self] in
+                self?.onOpenMessagesRequest?()
             }
         case "debug_explain":
             DispatchQueue.main.async { [weak self] in

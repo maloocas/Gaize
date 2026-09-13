@@ -514,6 +514,11 @@ function requestHighlight(target) {
   socket.send(JSON.stringify({ type: "highlight", target }));
 }
 
+function requestOpenMessages() {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+  socket.send(JSON.stringify({ type: "open_messages" }));
+}
+
 function handleCompanionEvent(msg) {
   if (msg.type === "voice_action") {
     handleVoiceAction(msg.action);
@@ -635,6 +640,7 @@ function beginLearning() {
   show("active-goal");
   document.getElementById("followup-choice").hidden = true;
   renderGoal();
+  requestOpenMessages();
 }
 
 function renderGoal() {

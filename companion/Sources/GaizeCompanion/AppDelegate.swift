@@ -177,22 +177,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         voiceCommands.onOpenMessagesCommand = { [weak self] in
-            guard let self else { return }
-            print("AppDelegate: opening Messages")
-            self.output.speak(AppSettings.shared.language.openingMessages)
-            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.MobileSMS") else {
-                print("AppDelegate: Messages app not found")
-                return
-            }
-            let config = NSWorkspace.OpenConfiguration()
-            config.activates = true
-            NSWorkspace.shared.openApplication(at: url, configuration: config) { app, error in
-                if let error {
-                    print("AppDelegate: failed to open Messages: \(error)")
-                    return
-                }
-                app?.activate(options: [])
-            }
+            self?.openMessages(announce: true)
+        }
+
+        bridge.onOpenMessagesRequest = { [weak self] in
+            self?.openMessages(announce: false)
         }
 
         voiceCommands.isMuted = { [weak self] in
@@ -331,6 +320,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Resolve the element during mouse-down, before the target app
             // handles the click and replaces controls such as Compose.
             self.sensing.reportPhysicalClick(at: axPoint)
+        }
+    }
+
+    private func openMessages(announce: Bool) {
+        print("AppDelegate: opening Messages")
+        if announce {
+            output.speak(AppSettings.shared.language.openingMessages)
+        }
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.MobileSMS") else {
+            print("AppDelegate: Messages app not found")
+            return
+        }
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+        NSWorkspace.shared.openApplication(at: url, configuration: config) { app, error in
+            if let error {
+                print("AppDelegate: failed to open Messages: \(error)")
+                return
+            }
+            app?.activate(options: [])
         }
     }
 
